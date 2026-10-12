@@ -1,5 +1,9 @@
 # NetBird Product Lab
 
+[![CI](https://github.com/sreos/netbird-product-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/sreos/netbird-product-lab/actions/workflows/ci.yml)
+
+**Live demo: <https://netbird-product-lab.vercel.app>**
+
 **Turn open-source feedback into backlog-ready tickets.** A portfolio prototype that shows how a Technical Product Owner can triage public GitHub issues, prioritize them transparently, and draft actionable tickets.
 
 > **Disclaimer.** This is an **independent portfolio prototype**. It is **not affiliated with, endorsed by, or sponsored by NetBird** or its maintainers. "NetBird" appears only to identify the public open-source repositories whose issues are analysed (`netbirdio/netbird`, `netbirdio/dashboard`). No NetBird logo or branding is used. Issue text belongs to its original authors. Categories, scores, hypotheses, and drafts here are this prototype's own inferences, may be wrong, and say nothing about NetBird's roadmap. Always read the source issue.
@@ -160,6 +164,8 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 The build was also checked with the **axe-core** automated accessibility engine in light and dark themes (0 violations on the board, a selected issue, and the case study). That is an automated scan, not a substitute for manual screen-reader testing.
 
 ## Deploying to Vercel
+
+The [live demo](https://netbird-product-lab.vercel.app) is deployed this way, straight from this repository.
 
 1. Push this folder to a Git repository and import it in Vercel. The Next.js framework preset is detected automatically; no `vercel.json` is needed.
 2. Deploy. **No environment variables are required.**
