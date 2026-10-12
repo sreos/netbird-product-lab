@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/", label: "Triage board" },
   { href: "/trends", label: "Trends" },
-  { href: "/case-study/5513", label: "Case study #5513" },
+  { href: "/case-study", label: "Case studies" },
 ];
 
 export function NavLinks() {
@@ -15,7 +15,8 @@ export function NavLinks() {
     <nav aria-label="Primary">
       <ul className="flex items-center gap-1 text-sm">
         {LINKS.map(({ href, label }) => {
-          const active = pathname === href;
+          // A section link stays highlighted on its child pages (e.g. /case-study/5513).
+          const active = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
           return (
             <li key={href}>
               <Link

@@ -169,7 +169,11 @@ export function DiscussionPanel({ issue }: { issue: Issue }) {
               </>
             )}
             {state.data.summary.teamComments === 0 && <span className="text-muted"> (no team response among the loaded comments)</span>}
-            . <span className="text-muted">Team means owner, member, or collaborator according to GitHub.</span>
+            .{" "}
+            <span className="text-muted">
+              Team means owner, member, or collaborator according to GitHub. Staff whose membership is private can appear as
+              contributors, so this can understate the team&rsquo;s involvement.
+            </span>
           </p>
           {state.data.comments.length === 0 ? (
             <p className="text-sm text-muted">GitHub returned no comments.</p>

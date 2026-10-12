@@ -53,6 +53,12 @@ describe("normalizeIssue", () => {
     expect(issue?.labels).toEqual(["bug", "plain"]);
   });
 
+  it("records whether the issue is open or closed, defaulting to open", () => {
+    expect(normalizeIssue({ ...raw, state: "closed" }, "netbirdio/netbird")?.state).toBe("closed");
+    expect(normalizeIssue({ ...raw, state: "open" }, "netbirdio/netbird")?.state).toBe("open");
+    expect(normalizeIssue(raw, "netbirdio/netbird")?.state).toBe("open");
+  });
+
   it("drops pull requests and malformed entries", () => {
     expect(normalizeIssue({ ...raw, pull_request: {} }, "netbirdio/netbird")).toBeNull();
     expect(normalizeIssue({ ...raw, created_at: "nope" }, "netbirdio/netbird")).toBeNull();

@@ -39,7 +39,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 - Categorize issues into bugs, reliability, UX, documentation, and feature requests, **showing the evidence** behind each label.
 - Offer an **editable** impact / urgency / effort model where every default has a stated reason and is never presented as a fact.
 - Draft a ticket (problem statement, user story, acceptance criteria, QA scenarios) from deterministic templates.
-- Demonstrate product thinking on one real report: [case study of issue #5513](src/app/case-study/5513/page.tsx).
+- Demonstrate product thinking on two real reports of different shapes: [a bug report (#5513)](src/app/case-study/5513/page.tsx) and [a long-running feature request (dashboard #412)](src/app/case-study/dashboard-412/page.tsx).
 - Be accessible, responsive, tested, and deployable to Vercel with **no secrets required**.
 
 **Non-goals**
@@ -63,7 +63,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
 | **Ticket drafting** | Problem statement, user story, acceptance criteria, QA test scenarios, and assumptions, from deterministic templates. **Edit any section**: sections you leave alone keep following your scores, edited ones are marked "Edited by you" and can be reset one by one or regenerated all at once. Edits are saved in your browser. Copy as Markdown. No AI involved. |
-| **Case study** | A worked analysis of [`netbirdio/netbird#5513`](https://github.com/netbirdio/netbird/issues/5513): evidence ledger, validation-first plan, hypotheses, requirements (R1 to R8), and an interactive concept mock of connection-state UX. |
+| **Case studies** | Two worked analyses of real public issues, chosen to differ. [`netbird#5513`](https://github.com/netbirdio/netbird/issues/5513) (a bug whose existence is in doubt): evidence ledger, validate-first plan, hypotheses, requirements R1 to R8, and a connection-state mock. [`dashboard#412`](https://github.com/netbirdio/dashboard/issues/412) (a feature request open for 25 months): a timeline verified against GitHub data, demand versus decision, options with a recommendation, requirements R1 to R8, a theme-control mock, and a WCAG contrast explorer. See [how they are written](#case-studies-srcappcase-study). |
 | **States** | Loading skeleton, error boundary, "no issues" and "no matches" empty states, sample-data banner, and not-found page. |
 
 ## Screenshots
@@ -78,6 +78,10 @@ Captured from a production build with live GitHub data on 12 Oct 2026.
 ![Backlog trends: issues created per month, stacked by category, with the tooltip for March 2026](docs/screenshots/07-trends.png)
 
 *Backlog trends, with the tooltip open on March 2026.*
+
+![Case study 2: the theme control mock in its proposed version, and the contrast explorer](docs/screenshots/08-case-study-2-mocks.png)
+
+*Case study 2 (dashboard #412): the proposed theme control, and the contrast explorer that turns "hard to read" into a number.*
 
 <p align="center"><img src="docs/screenshots/06-mobile.png" alt="Mobile layout of the triage board" width="300"><br><em>Responsive layout at 390px wide.</em></p>
 
@@ -123,6 +127,15 @@ Deterministic and dependency-free, in five steps:
 - **Honesty.** Only the most recently *updated* open items are loaded, so the page states that old issues appear only if they are still active, that this is today's backlog and not a history, and that a quiet month does not mean fewer reports. The current month is marked "in progress", and issues older than the chosen range are counted rather than silently dropped.
 - **Accessibility.** The chart is a keyboard-focusable group (arrow keys, Home, End) that announces each month, there is a table view with the same numbers, and in forced-colors mode the table replaces the chart. Scrollable tables are focusable.
 - **Verification.** I compared the monthly totals shown by the app against an independent count made straight from the GitHub API with no app code involved. All 12 months matched.
+
+### Case studies ([`src/app/case-study`](src/app/case-study/page.tsx))
+
+- **A labelled evidence ledger.** Every claim says who made it (the reporter, other commenters, a maintainer, or GitHub's own data) and whether it is verified. Unknowns are shown, not hidden: for example, whether the dark theme actually fails contrast was never measured, and the case study says so.
+- **Facts are separated from interpretation.** In case study 2 the timeline marks each item "Verified" (from GitHub metadata that was fetched and cross-checked) or "Stated in a comment". The conclusion that the bottleneck was prioritization rather than demand is explicitly a hypothesis, with other explanations listed.
+- **Step 0 is always "validate before building".** Case study 1 starts from a maintainer's request to retest; case study 2 starts from "measure the contrast first, and ask what blocks the open pull request".
+- **The tool's blind spots are part of the study.** Case study 2 shows what the triage board scored, then lists what an automatic score cannot see (reactions, pull requests, the team's silence, the accessibility angle).
+- **A finding that changed the product.** Reading the thread showed that GitHub's author association understates team involvement (staff with private membership appear as "contributor"), so the discussion panel now says so.
+- **Independence.** Neither study reviews NetBird's code, shows commenter usernames, or speaks for NetBird. Both say so at the top.
 
 ### Ticket templates ([`src/lib/ticket.ts`](src/lib/ticket.ts))
 
@@ -180,7 +193,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-186 tests in 20 files cover:
+220 tests in 24 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
@@ -189,6 +202,8 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
 - **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
 - **Similarity:** stemming and tokenizing, linking real related reports, the "rare word in both titles" rule, no links from boilerplate or description-only overlap, thresholds, symmetry, theme size cap, determinism. Each rule was verified by temporarily breaking it and confirming that a test fails.
+- **Case studies:** every section renders on both pages (and when the issue cannot be loaded), the evidence ledger labels claims and keeps unknowns visible, the timeline separates verified items from stated ones, the conclusion is marked as a hypothesis, the index links both studies, and the pages link to each other.
+- **Contrast and mocks:** the WCAG contrast formula against its published reference values (21:1 for black on white, 4.54:1 for #767676 on white), the contrast explorer (presets, sliders, icon-plus-word verdicts), and the theme-control mock in all three versions, including that the mock's own preview themes meet WCAG AA.
 - **Trends:** month windows (including year boundaries and UTC), per-category counts, issues older than the window reported rather than dropped, repository scoping, medians and shares, clean axis ticks, and the view itself: figures, legend toggling that never hides the last series, the table twin, range and repository filters, keyboard navigation and its screen-reader announcements, tooltip contents and placement, the in-progress month, and empty states.
 - **Discussion:** comment normalization (roles, team flag, bots, no usernames), the team-response summary, and the endpoint (input validation, loaded-issues-only with a check that GitHub is never called otherwise, 429 and 502 mapping, no caching of errors, sample mode, no leakage of internal errors), plus the panel's idle, loading, ready, partial-thread, error, retry, and hostile-text states.
 - **Related issues and themes UI:** theme filtering and its URL, stale theme links, related lists with shared words and caveats, jumping to a related issue (clearing a filter that would hide it), and the honest "nothing related" message.
@@ -228,7 +243,7 @@ The production build succeeds with or without network access, because a failed f
 - **Related issues and themes are wording overlap, not understanding.** Some links are weak or wrong, and real duplicates phrased differently are missed. Only the loaded issues are compared, and themes can change as the data changes.
 - **Categories and scores are heuristics.** They can be wrong. They are labelled as suggestions in the interface for that reason.
 - **Comments are shown, not analysed.** Scoring, categories, and similarity use only the issue title and description. The discussion panel loads the oldest 50 comments on request and reports who wrote them (team or community) but does not summarize or interpret them. The case study's reading of the thread was written by hand from the public discussion on 12 Oct 2026.
-- **The case study is a snapshot.** The issue may change after that date. The page shows live metadata (state, dates, comments) when GitHub is reachable, but the analysis text does not update itself. At the time of writing, a maintainer had asked the reporter to retest on a newer release, so whether the problem still exists is **unknown**, and the case study is built around that.
+- **The case studies are snapshots.** Both were written from public data read on 12 and 13 Oct 2026. Issues and pull requests change: each page shows live metadata (state, dates, comments) when GitHub is reachable, but the analysis text does not update itself, and case study 2 cites pull request details that may have moved on. In case study 1, a maintainer had asked the reporter to retest on a newer release, so whether the problem still exists is **unknown**, and the study is built around that. In case study 2, the explanation of *why* things happened is a hypothesis, because the visible thread is not the whole story.
 - **The mock UX is a concept.** It is not NetBird's interface, and its CLI wording is invented.
 - **The sample snapshot is old by design.** It was taken on 12 Oct 2026, with descriptions cut to 1,500 characters.
 - **Shared-IP rate limiting.** See the Vercel notes above.
@@ -262,7 +277,9 @@ The production build succeeds with or without network access, because a failed f
 src/
   app/
     page.tsx                  Triage board (server component, revalidated every 15 min)
-    case-study/5513/page.tsx  Case study
+    case-study/page.tsx       Case study index
+    case-study/5513/page.tsx  Case study 1 (a bug report)
+    case-study/dashboard-412/page.tsx   Case study 2 (a long-running feature request)
     trends/page.tsx           Backlog trends
     api/comments/route.ts     Read-only, validated, cached comments endpoint
     loading.tsx, error.tsx, not-found.tsx
@@ -273,12 +290,14 @@ src/
     ThemesPanel.tsx, RelatedIssues.tsx   Themes filter and related-issue list
     DiscussionPanel.tsx       On-demand comments with a team-response summary
     TrendsView.tsx            Hand-built accessible stacked column chart, figures, and tables
+    CaseStudyParts.tsx        Shared case-study pieces (evidence ledger, requirements, steps)
+    ThemeControlMock.tsx, ContrastExplorer.tsx   Concept mocks for case study 2
     ConnectionStateMock.tsx   Interactive concept mock for the case study
     PlainText.tsx             Safe rendering of untrusted text
   lib/
     github.ts                 Read-only GitHub client, caching, per-repo fallback (server-only)
     normalize.ts, text.ts     Payload mapping and sanitizing
-    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts, comments.ts, trends.ts   Pure, tested logic
+    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts, comments.ts, trends.ts, contrast.ts   Pure, tested logic
     useStoredRecord.ts        Per-issue localStorage with validation of stored data
   data/
     sample-issues.json        Snapshot of real public issues (12 Oct 2026)

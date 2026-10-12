@@ -16,6 +16,7 @@ export function normalizeIssue(raw: RawIssue, repo: RepoSlug): Issue | null {
     repo,
     number: raw.number,
     title: raw.title.trim(),
+    state: raw.state === "closed" ? "closed" : "open",
     url: `https://github.com/${repo}/issues/${raw.number}`,
     labels: (raw.labels ?? [])
       .map((l) => (typeof l === "string" ? l : (l?.name ?? "")))

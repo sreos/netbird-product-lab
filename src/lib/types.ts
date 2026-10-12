@@ -8,6 +8,8 @@ export interface Issue {
   repo: RepoSlug;
   number: number;
   title: string;
+  /** From the API. Optional so hand-built issues in tests need not set it; absent means "open". */
+  state?: "open" | "closed";
   /** Always rebuilt from repo + number, never taken from the API payload. */
   url: string;
   labels: string[];
