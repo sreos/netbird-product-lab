@@ -14,6 +14,8 @@ function setup() {
 
 beforeEach(() => {
   window.localStorage.clear();
+  // The board mirrors its filters in the URL, so each test must start from the default address.
+  window.history.replaceState(null, "", "/");
 });
 
 describe("TriageBoard", () => {

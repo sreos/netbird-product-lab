@@ -52,6 +52,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Data** | Open issues from `netbirdio/netbird` and `netbirdio/dashboard` via the GitHub REST API. Title, source link, labels, created date, comment count, and description. Pull requests are filtered out. |
 | **Resilience** | Server-side fetch cached for 15 minutes. If GitHub is rate-limited, slow, or down, **each repository independently falls back** to a bundled snapshot of real issues, and a banner says which repo and why. |
 | **Filtering** | Free-text search, repository filter, five category filters plus "Uncategorized", four sort orders, live counts, and a clear-filters action. |
+| **Shareable views** | Filters, sort, and the selected issue live in the URL, so `/?cat=reliability&issue=netbird-5513` opens that exact view. "Copy link to this view" builds it for you. Edited scores are deliberately **not** in links (they stay in each person's browser); share a prioritized ticket by copying its Markdown. |
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
 | **Ticket drafting** | Problem statement, user story, acceptance criteria, QA test scenarios, and assumptions, from deterministic templates that update as you edit scores. Copy as Markdown. No AI involved. |
@@ -147,13 +148,14 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-59 tests in 8 files cover:
+75 tests in 10 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
 - **Scoring:** the formula, band thresholds, "effort is never inferred", explained adjustments, and sanitizing tampered stored values.
 - **Ticket templates:** determinism, required sections, every category, "never presented as verified".
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
+- **URL state:** parsing and serializing views, safe fallbacks for unknown or hostile parameters, restoring a view on load, keeping the address bar in sync, the "linked issue is not loaded" notice, and that copied links carry no scores.
 
 The build was also checked with the **axe-core** automated accessibility engine in light and dark themes (0 violations on the board, a selected issue, and the case study). That is an automated scan, not a substitute for manual screen-reader testing.
 
@@ -174,6 +176,7 @@ The production build succeeds with or without network access, because a failed f
 | **One small scoring formula** instead of full RICE or weighted models | Readable in a minute and easy to challenge | Coarse 1 to 5 integers, not calibrated against outcomes |
 | **Deterministic ticket templates** instead of AI drafting | Reproducible, no keys, no user data leaves the app | Generic text; a human adds the specifics |
 | **`localStorage` for edits** instead of a database | No backend, no accounts, no secrets | Edits do not sync across devices or people |
+| **Only view state in shareable URLs, not scores** | A link can never silently overwrite someone else's own edits, and nothing about a triage is stored server-side | A shared link shows the viewer's own (or suggested) scores; sharing a prioritized ticket means copying its Markdown |
 | **Plain-text issue bodies** instead of rendering Markdown | Removes a whole class of injection risk from untrusted text | Loses most formatting |
 | **First page only** (the 60 most recently updated open items per repository) | Small, fast, rate-limit friendly | Not the complete backlog |
 
@@ -194,8 +197,8 @@ The production build succeeds with or without network access, because a failed f
 **Near term**
 
 - Editable ticket draft with a "regenerate from template" action.
-- "Load more" pagination and filters preserved in the URL.
-- ESLint and a Playwright end-to-end suite in CI.
+- "Load more" pagination.
+- ESLint and a Playwright end-to-end suite added to CI.
 - Content-Security-Policy with nonces.
 
 **Next**

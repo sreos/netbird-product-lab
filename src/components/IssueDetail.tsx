@@ -5,6 +5,7 @@ import type { Categorization } from "@/lib/categorize";
 import type { ScoreKey, ScoreOverrides, ScoreSuggestion, Scores } from "@/lib/scoring";
 import { formatDate } from "@/lib/text";
 import type { Issue } from "@/lib/types";
+import { issueKey } from "@/lib/urlState";
 import { CategoryBadge, GitHubLabel } from "./CategoryBadge";
 import { PlainText } from "./PlainText";
 import { ScoringPanel } from "./ScoringPanel";
@@ -24,7 +25,21 @@ const PREVIEW_CHARS = 700;
 
 export function IssueDetail({ issue, categorization, suggestion, overrides, scores, onScoreChange, onScoreReset }: DetailProps) {
   const [expanded, setExpanded] = useState(false);
+  const [linkStatus, setLinkStatus] = useState("");
   const long = issue.body.length > PREVIEW_CHARS;
+
+  async function copyLink() {
+    try {
+      // The address bar already mirrors the filters; make sure this issue is explicitly included.
+      const url = new URL(window.location.href);
+      url.searchParams.set("issue", issueKey(issue.id));
+      url.hash = "";
+      await navigator.clipboard.writeText(url.toString());
+      setLinkStatus("Link copied. It restores the filters and this issue; score edits stay in each person's own browser.");
+    } catch {
+      setLinkStatus("Copy was blocked by the browser. Copy the address bar instead.");
+    }
+  }
   const shown = expanded || !long ? issue.body : `${issue.body.slice(0, PREVIEW_CHARS).trimEnd()}…`;
 
   return (
@@ -53,15 +68,27 @@ export function IssueDetail({ issue, categorization, suggestion, overrides, scor
             <dd className="text-ink">{issue.comments}</dd>
           </div>
         </dl>
-        <a
-          href={issue.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-sm font-medium text-accent underline underline-offset-2"
-        >
-          View the source on GitHub<span className="sr-only"> (opens in a new tab)</span>
-          <span aria-hidden="true">↗</span>
-        </a>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <a
+            href={issue.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-accent underline underline-offset-2"
+          >
+            View the source on GitHub<span className="sr-only"> (opens in a new tab)</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+          <button
+            type="button"
+            onClick={copyLink}
+            className="rounded-md border border-line bg-surface px-2.5 py-1 text-sm font-medium text-ink hover:bg-surface-2"
+          >
+            Copy link to this view
+          </button>
+        </div>
+        <p role="status" className="text-xs text-muted">
+          {linkStatus}
+        </p>
       </header>
 
       <section aria-labelledby="cat-h" className="space-y-2">

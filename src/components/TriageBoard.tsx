@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { categorize, CATEGORIES, CATEGORY_LABELS, type Category, type Categorization } from "@/lib/categorize";
+import { categorize, CATEGORIES, CATEGORY_LABELS, type Categorization } from "@/lib/categorize";
 import {
   clampScore,
   priorityScore,
@@ -12,13 +12,11 @@ import {
   type ScoreSuggestion,
 } from "@/lib/scoring";
 import { REPOS, type Issue, type RepoSlug } from "@/lib/types";
+import { issueKey, parseView, serializeView, type CategoryFilter, type SortKey } from "@/lib/urlState";
 import { IssueCard } from "./IssueCard";
 import { IssueDetail } from "./IssueDetail";
 
 const STORAGE_KEY = "nbpl:score-overrides:v1";
-
-type CategoryFilter = Category | "all" | "uncategorized";
-type SortKey = "priority" | "updated" | "comments" | "created";
 
 interface Row {
   issue: Issue;
@@ -87,16 +85,51 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, ScoreOverrides>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [missingIssue, setMissingIssue] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
 
-  // Saved edits are read after mount so server and first client render match.
+  const isNarrowScreen = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches;
+
+  // Saved edits and the shared view (URL) are read after mount so the server render and the
+  // first client render match. The URL is untrusted input; parseView falls back to defaults.
   useEffect(() => {
     setOverrides(loadOverrides());
+    const view = parseView(window.location.search);
+    setQuery(view.query);
+    setRepo(view.repo);
+    setCategory(view.category);
+    setSort(view.sort);
+    if (view.issueId) {
+      if (rows.some((r) => r.issue.id === view.issueId)) {
+        setSelectedId(view.issueId);
+        const id = view.issueId;
+        // Bring the linked issue into view once the filtered list has rendered.
+        window.setTimeout(() => {
+          if (isNarrowScreen()) {
+            panelRef.current?.scrollIntoView?.({ block: "start" });
+            document.getElementById("detail-heading")?.focus({ preventScroll: true });
+          } else {
+            document.getElementById(`issue-${issueKey(id)}`)?.scrollIntoView?.({ block: "center" });
+          }
+        }, 60);
+      } else {
+        setMissingIssue(view.issueId);
+      }
+    }
     setHydrated(true);
+    // Runs once on mount; `rows` comes from props and is stable for this page.
   }, []);
   useEffect(() => {
     if (hydrated) saveOverrides(overrides);
   }, [overrides, hydrated]);
+
+  // Keep the address bar in sync so the current view can be shared. replaceState (not pushState)
+  // avoids filling the back button with one entry per keystroke.
+  useEffect(() => {
+    if (!hydrated) return;
+    const qs = serializeView({ query, repo, category, sort, issueId: selectedId });
+    window.history.replaceState(null, "", `${window.location.pathname}${qs}${window.location.hash}`);
+  }, [hydrated, query, repo, category, sort, selectedId]);
 
   const scoresFor = (row: Row) => resolveScores(row.suggestion.scores, overrides[row.issue.id]);
 
@@ -148,10 +181,11 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
 
   function select(id: string) {
     setSelectedId(id);
+    setMissingIssue(null);
     // On narrow screens the detail panel sits below the list, so bring it into view.
-    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches) {
+    if (isNarrowScreen()) {
       requestAnimationFrame(() => {
-        panelRef.current?.scrollIntoView({ block: "start" });
+        panelRef.current?.scrollIntoView?.({ block: "start" });
         document.getElementById("detail-heading")?.focus({ preventScroll: true });
       });
     }
@@ -282,6 +316,24 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
           </>
         )}
       </p>
+
+      {missingIssue && (
+        <p role="status" className="mt-3 rounded-lg border border-warn/40 bg-warn-soft px-4 py-2.5 text-sm text-warn">
+          <span aria-hidden="true">▲ </span>
+          The linked issue{" "}
+          <a
+            href={`https://github.com/${missingIssue.replace("#", "/issues/")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono underline underline-offset-2"
+          >
+            {missingIssue}
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>{" "}
+          is not in the loaded data. Only the 60 most recently updated open items per repository are loaded, so it may be older,
+          closed, or not an issue.
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <EmptyState title="No open issues found" body="The repositories returned no open issues, and no sample data is available." />

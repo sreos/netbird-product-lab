@@ -2,6 +2,7 @@ import type { Categorization } from "@/lib/categorize";
 import { BAND_LABELS, priorityBand, priorityScore, type Scores } from "@/lib/scoring";
 import { formatDate } from "@/lib/text";
 import type { Issue } from "@/lib/types";
+import { issueKey } from "@/lib/urlState";
 import { CategoryBadge, GitHubLabel } from "./CategoryBadge";
 
 interface Props {
@@ -28,7 +29,8 @@ export function IssueCard({ issue, categorization, scores, edited, selected, onS
 
   return (
     <article
-      className={`rounded-xl border bg-surface p-4 transition-colors ${
+      id={`issue-${issueKey(issue.id)}`}
+      className={`scroll-mt-4 rounded-xl border bg-surface p-4 transition-colors ${
         selected ? "border-accent ring-1 ring-accent" : "border-line hover:border-muted"
       }`}
     >

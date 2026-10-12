@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ConnectionStateMock } from "@/components/ConnectionStateMock";
 import { TicketView } from "@/components/TicketView";
 import { categorize } from "@/lib/categorize";
@@ -397,6 +398,12 @@ export default async function CaseStudyPage() {
         title="Ticket draft from the Lab"
         intro="The triage board produced this unedited, from the issue text and its suggested scores, using the fixed template. It shows the template's generic starting point; the sections above are what a human adds on top."
       >
+        <p className="text-sm text-muted">
+          <Link href="/?issue=netbird-5513" className="font-medium text-accent underline underline-offset-2">
+            Open this issue on the triage board
+          </Link>{" "}
+          to adjust its scores and watch the draft update.
+        </p>
         {draft ? (
           <div className="rounded-xl border border-line bg-surface p-4 sm:p-6">
             <TicketView draft={draft} headingLevel={3} />
