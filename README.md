@@ -58,6 +58,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Filtering** | Free-text search, repository filter, five category filters plus "Uncategorized", four sort orders, live counts, and a clear-filters action. |
 | **Related issues and themes** | Finds issues that use the same distinctive wording and groups them into "possible themes" you can filter by. Each link shows **the shared words behind it**, and the interface states that this is wording overlap, not meaning, and never calls anything a confirmed duplicate. See [how it works](#related-issues-and-themes-srclibsimilarityts). |
 | **Discussion on demand** | "Load the discussion" fetches an issue's comments (the oldest 50) through a small read-only server endpoint, shows whether **the project team has responded** (owner, member, or collaborator, according to GitHub), and links every comment to the original. Never loaded automatically, to protect the rate limit. Commenter usernames are deliberately not shown or stored. |
+| **Backlog trends** | A `/trends` page: issues created per month as a stacked column chart split by category, four figures (issues in view, created in the last 90 days, median age, labelled as needing triage), and a per-category table. One filter row (time range, repository) scopes everything. Built to be read honestly: the data limits are stated above the chart, the current month is marked "in progress", and every chart value is reachable through a table view and from the keyboard. See [how it was built](#backlog-trends-srcapptrends-srclibtrendsts-trendsview). |
 | **Shareable views** | Filters, sort, and the selected issue live in the URL, so `/?cat=reliability&issue=netbird-5513` opens that exact view. "Copy link to this view" builds it for you. Edited scores are deliberately **not** in links (they stay in each person's browser); share a prioritized ticket by copying its Markdown. |
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
@@ -73,6 +74,10 @@ Captured from a production build with live GitHub data on 12 Oct 2026.
 | --- | --- |
 | ![Priority sliders and the generated ticket draft](docs/screenshots/02-prioritize-and-ticket.png) **Prioritize and draft.** Every default is labelled as a suggestion and explained. | ![Dark theme](docs/screenshots/03-triage-board-dark.png) **Dark theme** follows the OS setting. |
 | ![Case study page](docs/screenshots/04-case-study.png) **Case study** of issue #5513. | ![Concept mock of a "sign-in required" connection state](docs/screenshots/05-connection-state-mock.png) **Mock connection-state UX** (a concept, not a real client). |
+
+![Backlog trends: issues created per month, stacked by category, with the tooltip for March 2026](docs/screenshots/07-trends.png)
+
+*Backlog trends, with the tooltip open on March 2026.*
 
 <p align="center"><img src="docs/screenshots/06-mobile.png" alt="Mobile layout of the triage board" width="300"><br><em>Responsive layout at 390px wide.</em></p>
 
@@ -110,6 +115,14 @@ Deterministic and dependency-free, in five steps:
 5. **Cluster** linked issues into themes with average-link clustering, capped at 8 issues per theme. A theme is labelled with the words most of its members share.
 
 **How the thresholds were chosen, and what that does and does not prove.** I ranked all issue pairs from the 62 live issues available on 12 Oct 2026 and read them, adjusting stop words and the title rule where the top results were clearly wrong (for example links created by "help / file / screenshots / attach" from the bug template, or by "docker" alone). In that informal review most of the 11 resulting themes looked sensible (for instance RPC errors, reverse-proxy reports, and two latency reports) and a few were weak (for instance "firewall · software · check"). This is a hand review, **not a benchmark**: there is no labelled ground truth, and precision and recall are unmeasured. The unit tests pin the behaviour of each rule, and were checked by deliberately breaking each rule to confirm that a test fails.
+
+### Backlog trends ([`src/app/trends`](src/app/trends/page.tsx), [`src/lib/trends.ts`](src/lib/trends.ts), [`TrendsView`](src/components/TrendsView.tsx))
+
+- **Form.** The job is "how the mix of categories changes over time", so a stacked column chart. Marks follow a fixed spec: columns at most 24px wide, a 2px gap of background between segments (no outlines), a 4px rounded end on the top segment only, hairline solid gridlines, and one number per column (the total) instead of a label on every segment.
+- **Color.** The five category series use the first five slots of a categorical palette, in a fixed order, and "Uncategorized" is grey. The palette was run through a colorblind-separation validator against this app's own surfaces (white and the dark card color) in both themes: all checks pass, with a worst adjacent colorblind difference of 9.1 (light) and 8.4 (dark) on a scale where 8 is the target. In light mode three colors (green, yellow, pink) fall below 3:1 contrast with white, which the method answers with required visible labels and a table view, so the chart has column totals, a legend with counts, tooltips, and a table twin. Hiding a series from the legend never repaints the others. The chart colors are deliberately separate from the category badge colors elsewhere in the app.
+- **Honesty.** Only the most recently *updated* open items are loaded, so the page states that old issues appear only if they are still active, that this is today's backlog and not a history, and that a quiet month does not mean fewer reports. The current month is marked "in progress", and issues older than the chosen range are counted rather than silently dropped.
+- **Accessibility.** The chart is a keyboard-focusable group (arrow keys, Home, End) that announces each month, there is a table view with the same numbers, and in forced-colors mode the table replaces the chart. Scrollable tables are focusable.
+- **Verification.** I compared the monthly totals shown by the app against an independent count made straight from the GitHub API with no app code involved. All 12 months matched.
 
 ### Ticket templates ([`src/lib/ticket.ts`](src/lib/ticket.ts))
 
@@ -167,7 +180,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-153 tests in 18 files cover:
+186 tests in 20 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
@@ -176,6 +189,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
 - **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
 - **Similarity:** stemming and tokenizing, linking real related reports, the "rare word in both titles" rule, no links from boilerplate or description-only overlap, thresholds, symmetry, theme size cap, determinism. Each rule was verified by temporarily breaking it and confirming that a test fails.
+- **Trends:** month windows (including year boundaries and UTC), per-category counts, issues older than the window reported rather than dropped, repository scoping, medians and shares, clean axis ticks, and the view itself: figures, legend toggling that never hides the last series, the table twin, range and repository filters, keyboard navigation and its screen-reader announcements, tooltip contents and placement, the in-progress month, and empty states.
 - **Discussion:** comment normalization (roles, team flag, bots, no usernames), the team-response summary, and the endpoint (input validation, loaded-issues-only with a check that GitHub is never called otherwise, 429 and 502 mapping, no caching of errors, sample mode, no leakage of internal errors), plus the panel's idle, loading, ready, partial-thread, error, retry, and hostile-text states.
 - **Related issues and themes UI:** theme filtering and its URL, stale theme links, related lists with shared words and caveats, jumping to a related issue (clearing a filter that would hide it), and the honest "nothing related" message.
 - **URL state:** parsing and serializing views, safe fallbacks for unknown or hostile parameters, restoring a view on load, keeping the address bar in sync, the "linked issue is not loaded" notice, and that copied links carry no scores.
@@ -203,12 +217,14 @@ The production build succeeds with or without network access, because a failed f
 | **`localStorage` for edits** instead of a database | No backend, no accounts, no secrets | Edits do not sync across devices or people |
 | **Only view state in shareable URLs, not scores** | A link can never silently overwrite someone else's own edits, and nothing about a triage is stored server-side | A shared link shows the viewer's own (or suggested) scores; sharing a prioritized ticket means copying its Markdown |
 | **Wording-overlap similarity** instead of embeddings or an LLM | Free, deterministic, explainable (the shared words are shown), runs in the browser with no data leaving it | Misses duplicates phrased differently and sometimes links issues that merely share jargon, so it is presented as "possibly related" only |
+| **A small hand-built SVG chart** instead of a charting library | No dependency, full control over the accessibility and honesty details (table twin, keyboard use, in-progress month), small bundle | Supports only the one chart type it was written for |
 | **Plain-text issue bodies** instead of rendering Markdown | Removes a whole class of injection risk from untrusted text | Loses most formatting |
 | **First page only** (the 60 most recently updated open items per repository) | Small, fast, rate-limit friendly | Not the complete backlog |
 
 ## Limitations
 
 - **Not a complete backlog.** Only the 60 most recently updated open items per repository are read, and pull requests are removed, so you typically see fewer than 120 issues (63 at the time of the screenshots).
+- **Trends describe the loaded backlog, not the history.** Because loading is by recent activity, the early months of the chart are biased toward issues that are still alive, and closed issues are absent. The "needs triage" figure relies on the labels the two repositories happen to use.
 - **Related issues and themes are wording overlap, not understanding.** Some links are weak or wrong, and real duplicates phrased differently are missed. Only the loaded issues are compared, and themes can change as the data changes.
 - **Categories and scores are heuristics.** They can be wrong. They are labelled as suggestions in the interface for that reason.
 - **Comments are shown, not analysed.** Scoring, categories, and similarity use only the issue title and description. The discussion panel loads the oldest 50 comments on request and reports who wrote them (team or community) but does not summarize or interpret them. The case study's reading of the thread was written by hand from the public discussion on 12 Oct 2026.
@@ -232,7 +248,6 @@ The production build succeeds with or without network access, because a failed f
 - Optional semantic similarity (embeddings), clearly labelled and compared against the current wording-overlap baseline.
 - Read and summarize issue comments, with the source comment linked for every claim.
 - Configurable label vocabulary and scoring weights, with the configuration shown on screen.
-- Trend view: new issues per category over time.
 - Export a draft as a pre-filled "new issue" link for a repository the user owns (still no writes from this app).
 
 **Optional AI assist** (only if it stays honest)
@@ -248,6 +263,7 @@ src/
   app/
     page.tsx                  Triage board (server component, revalidated every 15 min)
     case-study/5513/page.tsx  Case study
+    trends/page.tsx           Backlog trends
     api/comments/route.ts     Read-only, validated, cached comments endpoint
     loading.tsx, error.tsx, not-found.tsx
   components/
@@ -256,12 +272,13 @@ src/
     ScoringPanel.tsx, TicketPanel.tsx, TicketEditor.tsx, TicketView.tsx
     ThemesPanel.tsx, RelatedIssues.tsx   Themes filter and related-issue list
     DiscussionPanel.tsx       On-demand comments with a team-response summary
+    TrendsView.tsx            Hand-built accessible stacked column chart, figures, and tables
     ConnectionStateMock.tsx   Interactive concept mock for the case study
     PlainText.tsx             Safe rendering of untrusted text
   lib/
     github.ts                 Read-only GitHub client, caching, per-repo fallback (server-only)
     normalize.ts, text.ts     Payload mapping and sanitizing
-    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts, comments.ts   Pure, tested logic
+    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts, comments.ts, trends.ts   Pure, tested logic
     useStoredRecord.ts        Per-issue localStorage with validation of stored data
   data/
     sample-issues.json        Snapshot of real public issues (12 Oct 2026)

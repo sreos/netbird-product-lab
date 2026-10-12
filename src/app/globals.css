@@ -119,3 +119,38 @@ input[type="range"] {
     border: 1px solid CanvasText;
   }
 }
+
+/*
+ * Chart series colors: the first five slots of a categorical palette that was run through a
+ * colorblind-separation validator against this app's own surfaces (light #ffffff, dark #151b23).
+ * Slots are assigned by the fixed series order and never by rank, so filtering or hiding a series
+ * never repaints the others. Grey is for "Uncategorized".
+ */
+.viz-root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-other: #898781;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-other: #898781;
+  }
+}
+
+/* Color alone cannot be relied on in forced-colors mode: show the table instead of the chart. */
+@media (forced-colors: active) {
+  .viz-chart-only {
+    display: none !important;
+  }
+  .viz-table-twin {
+    display: block !important;
+  }
+}
