@@ -1,0 +1,404 @@
+{
+  "snapshotDate": "2026-10-12",
+  "issues": [
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5513,
+      "title": "SSO token expiry leaves client in stale \"Connected\" state — requires manual disconnect/reconnect to re-authenticate",
+      "state": "open",
+      "labels": [
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2026-03-05T14:45:36Z",
+      "updated_at": "2026-10-12T11:00:22Z",
+      "comments": 3,
+      "body": "**Describe the problem**\n\nWhen the SSO session (Azure AD OpenID Connect) expires, the NetBird client remains in a \"Connected\" state (Management: Connected, Signal: Connected) but peer connectivity silently degrades. Some peers show as \"Connecting\" indefinitely and traffic no longer flows to them, while the client never triggers a re-authentication prompt.\n\nThe only workaround is to manually run netbird down followed by netbird up, which triggers a new SSO login flow and restores full connectivity.\n\nThis makes the client unreliable for long-running machines (servers, CI runners, etc.) where no user is around to notice the silent failure and manually cycle the connection.\n\n**To Reproduce**\n\n1. Set up a self-hosted NetBird deployment with Azure AD OpenID Connect as the identity provider.\n2. Connect a client via netbird up and complete the SSO login.\n3. Wait for the SSO/OAuth token to expire (depends on Azure AD token lifetime policy).\n4. Observe that netbird status still shows Management: Connected and Signal: Connected, but traffic through netbird doesn't work\n5. Run netbird down && netbird up — SSO re-authentication is triggered and all peers reconnect normally.\n\n**Expected behavior**\n\nWhen the SSO token expires, the client should either:\n\n- Automatically refresh the token using a refresh token (if available), or\n- Detect the expired/invalid session and trigger a re-authentication flow automatically, or\n- Surface a clear status change (e.g., \"Needs Login\" / \"Session Expired\")\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 6953,
+      "title": "Client grows to 6 GB RSS and spins ~60% of a core while Management is unreachable (0.73.2, linux/arm64)",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-07-29T05:28:51Z",
+      "updated_at": "2026-10-12T17:36:52Z",
+      "comments": 5,
+      "body": "## Summary\n\nOn a self-hosted deployment, `netbird up --foreground-mode` grew to **6.0 GB RSS**\nand consumed **52 hours of CPU time over 87 hours of wall time** (~60% of one\ncore, sustained) while it was unable to reach the Management service.\n\nThe client did not exit, back off to a steady state, or cap its retry cost. It\nkept allocating until the host ran out of memory and the kernel/init OOM killer\nbegan terminating unrelated workloads on the same machine.\n\nThe memory is released immediately and completely on restart: a freshly started\nclient on the same host with the same (still failing) Management endpoint sits at\n**125 MB RSS** with **12 s** of CPU time. So the growth tracks time-spent-failing,\nnot configuration or workload.\n\n## Environment\n\n| | |\n|---|---|\n| NetBird client | **0.73.2**, installed as an OS extension/container |\n| Management server | self-hosted (version not independently verified at runtime; source pin records 0.71.x) |\n| OS | Talos Linux v1.13.6, Go 1.26.5 |\n| Arch | **linux/arm64** |\n| Host | 2 vCPU / 11.9 GB RAM |\n| Peers in account | 12 |\n| Client invocation | `netbird up --foreground-mode` |\n\n## Impact\n\nThe client and the Management service it depends on were on the same host. That\nmade the failure self-sustaining:\n\n1. Management becomes unreachable.\n2. Client retries; RSS and CPU climb without bound.\n3. Host exhausts memory; the OOM killer starts killing the lowest-priority\n   cgroups.\n4. Among the victims is the reverse proxy that **serves the Mana\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 7430,
+      "title": "Signal gRPC stream never retries after a WAN outage while Management and Relay both recover (0.77.1, linux/amd64)",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-09-04T12:30:14Z",
+      "updated_at": "2026-10-12T13:12:03Z",
+      "comments": 4,
+      "body": "### Summary\n\nAfter a ~60 minute WAN outage the client re-established its **Management** and **Relay** connections but **never** re-established the **Signal** stream. It stayed that way for **36 h 35 min**, until someone reached the machine over its LAN and poked the daemon.\n\nSignal carries connection offers between peers, so while it is dead **no peer can even initiate a handshake**. The machine was up, on the internet, present on the relay — and completely unreachable, with `netbird status` reporting `Signal: Connected` throughout.\n\n**0.77.1**, `linux/amd64`, Debian, kernel interface, self-hosted control plane. Clean 0.77.1 install, never upgraded; the daemon ran continuously for the whole period — no restart, no reboot.\n\n### Timeline\n\nAll three streams drop within 12 seconds when the WAN goes away. Signal and Management fail with the **identical** error:\n\n```\n02:30:51 WARN shared/signal/client/grpc.go:277:\n         disconnected from the Signal service but will retry silently.\n         Reason: rpc error: code = Unavailable desc = keepalive ping failed to receive ACK within timeout\n02:30:56 ERRO shared/relay/client/client.go:749: health check timeout\n02:31:03 WARN shared/management/client/grpc.go:478:\n         disconnected from the Management service but will retry silently.\n         Reason: rpc error: code = Unavailable desc = keepalive ping failed to receive ACK within timeout\n```\n\nThe WAN returns about an hour later. Two of the three recover:\n\n```\n+1h00m INFO shared/relay/\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5744,
+      "title": "Windows GUI client always showing connection popup",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-03-30T22:02:39Z",
+      "updated_at": "2026-10-12T17:07:33Z",
+      "comments": 12,
+      "body": "Windows GUI is always showing connection popup after every **reboot**, even when \"Connect on Startup\" is disabled and client was not connected at all before the reboot.\n<img width=\"530\" height=\"306\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/a7d0ab06-befd-4b8f-9525-683cd194fa28\" />\n\nWhen users are connecting NetBird only on-demand as a VPN, this popup on every reboot is annoying - they do not want to connect right now.\n\nNetBird version: 0.67.0\n\n--\n\nAny ideas about this? I am not sure what should be the best course of action here, I do not want to collide with other use-cases - however for my specific one, this popup should not be there."
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5972,
+      "title": "Windows userspace bind proxy (factory_usp): P2PConnected stuck at 0 for NAT traversal peers despite STUN responses received",
+      "state": "open",
+      "labels": [
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2026-04-23T14:28:16Z",
+      "updated_at": "2026-10-12T14:11:11Z",
+      "comments": 2,
+      "body": "Description:\nOn Windows with the userspace bind proxy (factory_usp), ICE NAT traversal fails permanently for peers outside the local subnet. STUN responses are confirmed arriving at the machine via packet capture, RemoteCandidate counts accumulate normally, and WGCheckSuccess increments — but P2PConnected never moves off 0. The same network with a Linux client (kernel WireGuard) achieves P2P to the same peers immediately.\nEnvironment:\n\nOS: Windows 10/11 amd64\nNetBird version: 0.69.0\nInterface type: Userspace (factory_usp / bind proxy)\nNetwork: Behind NAT (OPNsense firewall with Hybrid outbound NAT + static port)\n\nKey log evidence:\nINFO client/net/env_bound_iface.go:46: system supports advanced routing\nINFO client/iface/wgproxy/factory_usp.go:15: WireGuard Proxy Factory will produce bind proxy\nWARN client/iface/bind/activity.go:85: could not find record for address 127.1.x.x:51820\nState dump after 30+ minutes — P2PConnected permanently 0:\nRemoteCandidate: 409, P2PConnected: 0, WGCheckSuccess: 17, RelayConnected: 1\nPacket capture confirms STUN working: Bidirectional UDP traffic to stun.netbird.io on ports 443 and 5555 from source port 51820, with responses arriving. Linux peer on same network achieves host/prflx P2P to the same peers.\nRoot cause hypothesis: The bind proxy's activity table (iface/bind/activity.go) is not registering incoming STUN responses as valid ICE candidate records when the source port is 51820 (the WireGuard proxy port), causing all ICE connectivity checks\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5756,
+      "title": "Any MacOS / iOS / tvOS cannot log in using SSO",
+      "state": "open",
+      "labels": [
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2026-03-31T20:04:56Z",
+      "updated_at": "2026-10-12T11:31:10Z",
+      "comments": 3,
+      "body": "**Describe the problem**\n\nThank you for your hard work!!\nI am using opensense (26.1) with netbird 66.3 (config as Exit Node).\nMy Android 13 netbird client 64.1 works perfectly and uses OpnSense exit node (ip is from opnsense)(internet access and network shared).\nAnother Android (netbird client 64.1 Android 12) and works perfectly and uses OpnSense exit node (ip is from opnsense) (internet access and network shared).\nBut my AppleTv (tvos 26.4) using netbird 66.2 is not working at all (when using netbird, not internet at all). But I can access shared network.\niPadOS (netbird 66.0 and iPadOS 26.3.1) is not working at all (when using netbird, no internet at all). But I can access shared network.\nMacOS with the same issue.\nCloud account.\nISP location A: opnsense\nISP location B: Android and tvos, macos and ipados.\n\nBoth Androids were logged in using Google SSO. Tested correctly using Setup keys.\nApple devices were logged in using SetUp keys since I cannot SSO.\nThank you.\n\n**To Reproduce**\n\nSteps to reproduce the behavior:\nMacOS / iPadOS / tvOS\nDownload app\nTap on Connect from Connection tab.\nJumps to browser.\nLog in using Google SSO (signs on correctly)\nAfter successful log in. Jumps to http://localhost:53000/?code=......\nProcess stopped since localhost:53000 not responding\n\n**Expected behavior**\n\nExpected to peer the device. As it happens with Android devices.\n\n**Are you using NetBird Cloud?**\n\nNetbird Cloud\n\n\n**Is any other VPN software installed?**\n\nNo\n\n\n**Additional context**\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 7152,
+      "title": "Support multiple identity connectors mapping to a single user account (native + OIDC merge)",
+      "state": "open",
+      "labels": [
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "backend"
+        }
+      ],
+      "created_at": "2026-08-11T10:08:30Z",
+      "updated_at": "2026-10-12T14:08:58Z",
+      "comments": 2,
+      "body": "**Component:** `management/server` — user identity model\n\n### Summary\n\nNetBird's embedded IdP (`/oauth2`, dex-compatible) supports multiple connectors: a `local` email/password connector and OIDC connectors (e.g., an external Pocket-ID / Keycloak / Auth0 IdP). When the same human authenticates through two different connectors, the management server creates **two separate user accounts**, because a user is keyed by `(identity, connector)`.\n\n### Current behavior\n\nBoth rows are the same person (same email), but NetBird exposes two users. Peers attach to a single account, so the other login path appears to \"lose\" all devices. The only current remedy is the one-way `migration_up` tool (`management/server/idp/migration`, `MigrateUsersToStaticConnectors` / `UpdateUserID`), which:\n\n* Is destructive / one-way — after re-keying, the native connector no longer maps to the account\n* Re-keys **all** users, not a single user\n* Removes the ability to use the native connector as a break-glass fallback\n\n### Requested behavior\n\n* Link multiple connector identities to a single user account, so the same person can log in via the native/local connector (break-glass) **or** an OIDC connector, resolving to the same NetBird user + peers.\n* Provide an admin API/flow to **merge two existing users** (same email, different connector) non-destructively, without re-keying the whole account.\n* Make `migration_up` optional rather than required.\n\n### Use case\n\nOperators who run NetBird's embedded IdP and lat\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5361,
+      "title": "Sluggish resolution of short hostnames (search domains) on Windows",
+      "state": "open",
+      "labels": [
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2026-02-17T10:56:29Z",
+      "updated_at": "2026-10-12T11:18:11Z",
+      "comments": 1,
+      "body": "**Describe the problem**\n\nWe're running a self-hosted netbird server with some Windows- and Linux-clients, in a test for potential migration from tailscale to netbird.\n\nWe don't have any custom Networks or DNS settings in place in our netbird setup - just a bunch of clients/peers that should all be able to reach one another.\n\nWhile all this works pretty seamlessly with our [vanilla out-of-the-box default setup](https://docs.netbird.io/selfhosted/selfhosted-quickstart) (v.65.1 for server and clients alike), we do notice that resolving simple hostnames to their fqdn via search domain generally hangs for 1-2s on a Windows clients before they succeed. Unless that lookup has already been cached, that is - so after an `ipconfig /flushdns` it's the same 1-2s lag again next time, otherwise follow-up resolutions of the same short name are fast (for a while anyway).\n\nBasically this:\n```\n# Slow - hangs for 1-2s before starting to run for myhost.netbird.selfhosted\nping myhost\n\n# Fast on 2nd time shortly after, since the lookup got cached\nping myhost\n\n# With fqdn given, it's always fast\nping myhost.netbird.selfhosted\n```\n\nIt feels like the lookup (or rather the resolution from unqualified name to fqdn) stalls until it eventually works, maybe due to some internal fallback. We do not experience anything similar on side of our Linux clients (Ubuntu).\n\nI don't know if this is any inherent issue with the netbird client, or rather just something Windows-specific. From our current/previous setup\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5497,
+      "title": "Self Hosted Netbird Server behind NGINX Reverse Proxy - Error / Warnings",
+      "state": "open",
+      "labels": [
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2026-03-04T08:33:24Z",
+      "updated_at": "2026-10-12T11:00:35Z",
+      "comments": 1,
+      "body": "**Errors / Warnings and stalled Connections**\n\nNetbird is running on IP 10.30.1.208 - 8 Core CPU, 4 GB RAM\n\nNGINX Reverse Proxy is running on 10.30.1.168 - 6 Core, 4 GB RAM\n\nIt was all fine until I noticed dashboard timing out upon further investigation, found NGINX exhausting 4 CPU cores multiple times I went ahead and increased the NGINX Core as well as Netbird Server's Core but that doesn't seem to fully fix the issue:\n\nHere's NGINX error.log\n\n2026/03/04 13:27:15 [error] 547023#547023: *20839439 upstream rejected request with error 8 while reading response header from upstream, client: 10.30.0.239, server: netbird.example.com, request: \"POST /signalexchange.SignalExchange/Send HTTP/2.0\", upstream: \"grpc://10.30.1.208:10000\", host: \"netbird.example.com:443\"\n2026/03/04 13:27:15 [error] 547023#547023: *20839439 upstream rejected request with error 8 while reading response header from upstream, client: 10.30.0.239, server: netbird.example.com, request: \"POST /signalexchange.SignalExchange/Send HTTP/2.0\", upstream: \"grpc://10.30.1.208:10000\", host: \"netbird.example.com:443\"\n2026/03/04 13:27:15 [error] 547023#547023: *20839439 upstream rejected request with error 8 while reading response header from upstream, client: 10.30.0.239, server: netbird.example.com, request: \"POST /signalexchange.SignalExchange/Send HTTP/2.0\", upstream: \"grpc://10.30.1.208:10000\", host: \"netbird.example.com:443\"\n2026/03/04 13:27:15 [error] 547023#547023: *20839439 upstream rejected request with error 8\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 3121,
+      "title": "Peer link is being dropped",
+      "state": "open",
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "client"
+        },
+        {
+          "name": "connection"
+        }
+      ],
+      "created_at": "2024-12-28T17:58:19Z",
+      "updated_at": "2026-10-11T04:21:59Z",
+      "comments": 31,
+      "body": "**Describe the problem**\n\nI have netbird installed as an overlay network.  I have an ingress server and another server in another location.  Neither are behind NAT.  As far as I can tell everything is working properly, and generally does. The overlay peer network got dropped and the ingress server stopped talking to the other server.  I noticed it quickly because of my host down alerts.  I had to restart netbird on the ingress server to get the peer connection back up.\n\nI've been running netbird for more than a year.\n\n**To Reproduce**\n\nSteps to reproduce the behavior:\n1: Run netbird for a long amount of time\n2: Monitor connections for loss\n3: Run upgrades and configuration changes\n\nI suspect that this happens around an upgrade or configuration change somewhere in the overall system.  I am not certain as this only happens rarely.  I suspect that there are bugs, probably race conditions, in the teardown and setup procedures that create this condition.\n\n**Expected behavior**\n\nDoes not drop peers.\n\n**Are you using NetBird Cloud?**\n\nSelf-hosted\n\n**NetBird version**\n\nIngress was 0.29.2 on this latest time (has been observed with numerous versions), and the other server was on 0.35.0.\n\n**Additional context**\n\nI don't have time to track this down and be more specific as it's not consistent.  This last incident was a production outage that I never had with nebula, so I'm switching back.  The system looks nice and I've seen a lot of improvements.   But I need reliability above all else\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 2860,
+      "title": "Netbird won't reconnect to other windows peer on reboot until I ping the peer",
+      "state": "open",
+      "labels": [
+        {
+          "name": "waiting-feedback"
+        },
+        {
+          "name": "triage-needed"
+        }
+      ],
+      "created_at": "2024-11-07T19:17:12Z",
+      "updated_at": "2026-10-11T04:07:50Z",
+      "comments": 13,
+      "body": "## **Describe the problem**\n\nWindows clients can't reach peers untill I ping them.\nI believe the issue is prevalent after reboots and I haven't het monitored if it drops later during the day.\n\n\n## **To Reproduce**\n\nSteps to reproduce the behavior:\n1. Reboot the computer \n2. When it comes back on, I can't reconnect to the windows peer even if I wait 5-15 minutes\n3. When I ping it, there is a 3 - 5 second delay but then the peer replies to pings and I can access it normally after that.\n4. If either one reboots, were back to the same issue.\n\n### **Are you using NetBird Cloud?**\n\nI'm using the NetBird SelfHosted control plane.\n\n### **NetBird version**\n\n `0.31.0`\n\n- I have also made sure they are all running the latest version of netbird.\n- Windows 11 Pro \n\n## **Expected behavior**\n\nA clear and concise description of what you expected to happen.\n\nI have a few computers connected on different locations and I'm using Netbird to connect them together.\n\nInstalled the Netbird client and joined it to the control pane and did the same on other windows PCs across the internet\n\nWhen I reboot the computer, I cannot reach the other Peer across netbird.\nWhat seems to help is if I ping the computer, and then after that I can reach the computer.\nI haven't checked if after a while it drops or not.\n\nWhat I would hope is that if I have another windows computer connected from a different location via netbird, I would be able to reconnect to it, even if I have to wait for a bit untill the other serv\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 5726,
+      "title": "Custom DNS zone records not distributed to clients (LocalResolver [0 records])",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-03-29T08:17:45Z",
+      "updated_at": "2026-10-12T10:01:23Z",
+      "comments": 1,
+      "body": "## Description\n\nCustom DNS zone records created in the dashboard are not distributed to clients. The zone handler is registered on the client but with 0 records.\n\n## Steps to Reproduce\n\n1. Self-hosted NetBird v0.67.1 (quickstart deployment)\n2. Client v0.67.0/0.67.1 on Linux with systemd-resolved\n3. Create a DNS zone `gub.internal` via dashboard with Distribution Group \"All\"\n4. Add A records (e.g., hostname `sewa-prod`, IP `100.79.153.212`)\n5. Reconnect client: `netbird down && netbird up`\n6. Check client debug logs\n\n## Expected Behavior\n\nClient logs should show `LocalResolver [6 records]` for the zone.\n\n## Actual Behavior\n\n```\nregistering handler LocalResolver [0 records] with priority 75 for [gub.internal.]\n```\n\nThe zone is registered but no records are distributed. DNS queries for `sewa-prod.gub.internal` fail.\n\n## Debug Log (client, full reconnect)\n\n```\nadded reverse DNS zone: 79.100.in-addr.arpa. with 2 records\nstarting dns on 100.79.153.212:53\nregistering handler LocalResolver [0 records] with priority 75 for [netbird.selfhosted.]\nregistering handler LocalResolver [0 records] with priority 75 for [gub.internal.]\nregistering handler LocalResolver [0 records] with priority 75 for [79.100.in-addr.arpa.]\nadding 2 search domains and 1 match domains. Search list: [netbird.selfhosted. gub.internal.] , Match list: [79.100.in-addr.arpa.]\n```\n\n## Environment\n\n- Server: netbirdio/netbird-server:latest (v0.67.1)\n- Client: v0.67.0 and v0.67.1\n- OS: Ubuntu 24.04 (server), NixOS (clien\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 446,
+      "title": "Feature: support connecting to multiple networks/management instances simultaneously",
+      "state": "open",
+      "labels": [
+        {
+          "name": "documentation"
+        },
+        {
+          "name": "enhancement"
+        },
+        {
+          "name": "client"
+        },
+        {
+          "name": "management-service"
+        },
+        {
+          "name": "client-ui"
+        }
+      ],
+      "created_at": "2022-08-31T23:04:06Z",
+      "updated_at": "2026-09-25T05:13:15Z",
+      "comments": 75,
+      "body": "I sometimes have a machine on multiple networks at once.  In wireguard, this is easy as I can just create a new config with a different interface name, and they can both run without conflict.  \n\nIs this use case supported on netbird?  I can't find any information about it in the docs or issues."
+    },
+    {
+      "repository": "netbirdio/netbird",
+      "number": 3302,
+      "title": "Unable to troubleshoot posture checks",
+      "state": "open",
+      "labels": [
+        {
+          "name": "UX"
+        },
+        {
+          "name": "agent"
+        },
+        {
+          "name": "posture-checks"
+        }
+      ],
+      "created_at": "2025-02-09T00:34:57Z",
+      "updated_at": "2026-09-24T10:13:14Z",
+      "comments": 3,
+      "body": "**Describe the problem**\n\nI am struggling to figure out how to troubleshoot posture checks. Sometimes I will change a check and some clients will disconnect but I can't see anything in the server or client logs. Need to play with the checks for a while until I figure out what is going on.\n**To Reproduce**\n\nSteps to reproduce the behavior:\n1. Change posture checks\n2. Check activity log, server logs (all containers) and netbird log file.\n\n**Expected behavior**\n\nSomewhere I can see \"device X failed Y posture check\".\n\n**Are you using NetBird Cloud?**\n\nSelf hosted.\n\n**NetBird version**\n\n0.36.5\n\n"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 412,
+      "title": "Add Light Theme for Web UI",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        },
+        {
+          "name": "feature-request"
+        }
+      ],
+      "created_at": "2024-09-09T13:10:48Z",
+      "updated_at": "2026-10-08T04:20:20Z",
+      "comments": 22,
+      "body": "As an older developer the dark theme (gray on black) can be very difficult for me to read.\n\nAdding the ability to change the web UX to a light theme would be very helpful.  The light theme on the doc page (https://docs.netbird.io/) is perfectly readable and would be a good option.\n\nI have noticed in the top right you have something that appears to be a theme selector button but both Light and System are disabled?  Maybe this is in the works?"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 813,
+      "title": "Rootless Dashboard uses port 8080 but Traefik configuration still points to port 80",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        }
+      ],
+      "created_at": "2026-09-23T23:59:06Z",
+      "updated_at": "2026-09-23T23:59:06Z",
+      "comments": 0,
+      "body": "**Describe the problem**\n\nWhen using the rootless Dashboard image `netbirdio/dashboard:v2.93.0-rootless` in a self-hosted NetBird setup with Traefik, the Dashboard is no longer reachable with the existing Traefik configuration.\n\nThe regular Dashboard image listens on port `80`, while the rootless image listens on port `8080`.\n\nExisting NetBird Traefik examples/configurations use:\n\n```yaml\n- traefik.http.services.dashboard.loadbalancer.server.port=80\n```\n\nFor the rootless Dashboard image, this needs to be changed to:\n\n```yaml\n- traefik.http.services.dashboard.loadbalancer.server.port=8080\n```\n\nThis difference does not appear to be documented, which makes upgrading from the regular Dashboard image to the rootless image unexpectedly break the Dashboard when using Traefik.\n\n**To Reproduce**\n\nSteps to reproduce the behavior:\n\n1. Run a self-hosted NetBird installation behind Traefik.\n2. Use the regular Dashboard image, for example `netbirdio/dashboard:v2.92.0`, with:\n\n   ```yaml\n   - traefik.http.services.dashboard.loadbalancer.server.port=80\n   ```\n3. Upgrade the Dashboard image to:\n\n   ```yaml\n   netbirdio/dashboard:v2.93.0-rootless\n   ```\n4. Keep the existing Traefik Dashboard service port set to `80`.\n5. Try to open the NetBird Dashboard through the configured public hostname.\n6. The Dashboard is no longer reachable through Traefik.\n7. Change the Traefik service port to:\n\n   ```yaml\n   - traefik.http.services.dashboard.loadbalancer.server.port=8080\n   ```\n8. The Dashboard becom\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 810,
+      "title": "Enable copy on selection in integrated ssh terminal",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        },
+        {
+          "name": "feature-request"
+        }
+      ],
+      "created_at": "2026-09-23T09:39:19Z",
+      "updated_at": "2026-09-23T09:39:19Z",
+      "comments": 0,
+      "body": "**Is your feature request related to a problem? Please describe.**\nI'm putty, and ttyd user, and when I selected text in terminal is been automatically copied (under windows). In the integrate ssh terminal I must right click on selection and select copy (Firefox/win10), so I always forget and crying...\n\n**Describe the solution you'd like**\nOn integrate HTML ssh client, add copyOnSelection option.\n\n**Describe alternatives you've considered**\nI dont know\n\n**Additional context**\nI not js dev but I saw that for xterm:\n```\nconst { Terminal } = require('xterm');\nconst { FitAddon } = require('xterm-addon-fit');\n\n// Create a new terminal\nconst terminal = new Terminal({\n  copyOnSelection: true, // Enable copy on selection\n});\n\n// Load the FitAddon for responsive sizing\nconst fitAddon = new FitAddon();\nterminal.loadAddon(fitAddon);\n\n// Open the terminal in a DOM element\nterminal.open(document.getElementById('terminal'));\n\n// Fit the terminal to its container\nfitAddon.fit();\n```\n"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 778,
+      "title": "Self-compiled dashboard fails to load - \"Connection closed\" in browser console",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        }
+      ],
+      "created_at": "2026-08-27T10:34:11Z",
+      "updated_at": "2026-08-27T10:34:11Z",
+      "comments": 0,
+      "body": "**Describe the problem**\n\nI'm struggling to get my own docker image of the dashboard working. I have a default `docker-compose.yml` working with the official image (`netbirdio/dashboard:latest`), but after compiling my own image with 0 changes, the page inexplicably fails.\n\nThere are no errors when compiling, nor any errors or notable messages from `docker logs`. The browser console shows a few CSP errors, and then it throws a \"Connection closed\" error.\n\nThere are no errors in the browser's network tab, everything is `200 OK`.\n\n**To Reproduce**\n\n1. Set up a working `docker compose` project with the official image (`netbirdio/dashboard:latest`), populate `config.yaml` & `dashboard.env`, etc.\n2. `git clone https://github.com/netbirdio/dashboard && cd dashboard`\n3. `./build.sh`\n4. Replace `netbirdio/dashboard:latest` with `netbird-dashboard:amd64` in `docker-compose.yml`\n5. `docker compose down; docker compose up -d --force-recreate`\n\n**Expected behavior**\n\n<img width=\"443\" height=\"522\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/1ac9148b-458a-425d-b9c0-3a48f2534d43\" />\n\n<img width=\"784\" height=\"149\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/899739d5-2120-4bfb-8f0f-1ce3799f6f97\" />\n\n**NetBird _dashboard_ version**\n\n`v.2.91.1`\n\n**Screenshots**\n\n<img width=\"436\" height=\"300\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/04c58eaa-6b72-4684-b76a-0ed1268922e8\" />\n\n<img width=\"1726\" height=\"321\" alt=\"image\" src=\"https://github.com/user-a\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 777,
+      "title": "Group selector blocks the main thread ~190 ms per keystroke with ~960 groups (no list virtualization)",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-08-27T10:26:34Z",
+      "updated_at": "2026-08-27T10:26:34Z",
+      "comments": 0,
+      "body": "## Summary\n\nOn an account with **959 groups**, the group selector on the peer detail page renders **every group as\nreal DOM nodes** — no virtualization — and re-scores the full list on every keystroke. Opening the\nselector adds **~20,700 DOM nodes** and blocks the main thread for **637 ms**; each subsequent\nkeystroke blocks it for a further **~190 ms**. Typing a 7-character filter costs **2.24 s of\ncumulative main-thread blocking**, and every keystroke registers as a `longtask`.\n\nCritically, **narrowing the query does not reduce the cost** — a query matching only **2** groups still\nblocks for **323 ms**, because the work scales with the *total* number of groups, not the number of\nresults. There is therefore no way for an operator to type around this.\n\nThe server is not involved: `GET /api/groups` returns in ~260 ms (of which the database is ~7 ms), and\n**no network request is made while typing** (verified: 0 new resource entries across 5 keystrokes).\n\n## Environment\n\n| | |\n|---|---|\n| Dashboard | **v2.90.3** |\n| Management | **v0.76.3** (self-hosted, PostgreSQL 16) |\n| Browser | Chrome (desktop, Linux) |\n| Account scale | **959 groups**, 600 peers, 5,861 group-peer memberships, 429 policies |\n| Peer under test | 65 assigned groups |\n\n## Steps to reproduce\n\n1. Have an account with a large number of groups (~1000).\n2. Open **Peers → any peer → Overview**.\n3. Click the chevron on the **Assigned Groups** box to open the group selector.\n4. Type a few characters into \"Search groups\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 768,
+      "title": "Support for the OIDC prompt feature in the Netbird Dashboard UI",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        },
+        {
+          "name": "feature-request"
+        }
+      ],
+      "created_at": "2026-08-20T07:09:01Z",
+      "updated_at": "2026-08-26T08:18:35Z",
+      "comments": 1,
+      "body": "**Details**\nThe OIDC prompt feature is a OIDC core 1.0 feature (section 3.1.2.1) and would enhance security.\n\n**Is your feature request related to a problem? Please describe.**\nIt is related to the fact that the system administrators and management want to enforce login every time a session is disconnected or when the user presses press the disconnect button, due to possible security concerns from users using shared devices at home to login to Netbird, press the disconnect button and someone else in the household could use the computer and connect to Netbird without requiring authentication (yes they should have separate accounts, but that's not how it works in an average household). Just like a more traditional VPN client functions.\n\n**Describe the solution you'd like**\nA user presses disconnect, then presses connect and the browser should open every time asking the user for authentication by the provided OIDC\n\n**Describe alternatives you've considered**\nThese are not available as they're out of our control.\n\n**Additional context**\nNone\n"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 763,
+      "title": "Add a delete action to the peer detail page",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        },
+        {
+          "name": "feature-request"
+        }
+      ],
+      "created_at": "2026-08-14T22:16:29Z",
+      "updated_at": "2026-08-14T22:16:29Z",
+      "comments": 0,
+      "body": "**Is your feature request related to a problem? Please describe.**\n\nWhen I open a peer from the peers overview, the detail page shows all of its settings and information,\nbut there is no way to delete the peer from there.\n\nBoth existing ways to delete a peer live in the **peer overview list**:\nthe three-dot menu on a peer's row, and the bulk action bar that appears at the bottom of the screen once peers are selected. Neither is reachable once a peer is open.\n\nSo when I decide on the detail page that a peer should go,\nI have to navigate back to the list, find the peer again, and delete it there.\nIn a long list that means searching or filtering for a peer I had open a moment ago.\n\n\n**Describe the solution you'd like**\n\nA way to delete a peer directly from its detail page.\n\nThe **network detail page** already solves exactly this: it has a three-dot menu in its header\nwith a **Delete** entry, and it returns to the network list once the network is gone.\nThe peer detail page is the odd one out here, so following the same pattern seems like the natural fix.\n\nThe behaviour I would expect:\n\n- the action is only offered to users who are allowed to delete peers\n- the same confirmation dialog that the table's delete action already shows\n- after deleting, return to the peer list\n- if the confirmation is dismissed, stay on the page and change nothing\n\n\n**Describe alternatives you've considered**\n\n- **A dedicated Delete button** next to Save Changes.\nFewer clicks, but it puts a destructive\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 742,
+      "title": "Generated password modal flashes and disappears when creating a user from an empty group's detail page",
+      "state": "open",
+      "labels": [],
+      "created_at": "2026-08-03T14:43:29Z",
+      "updated_at": "2026-08-03T14:43:29Z",
+      "comments": 0,
+      "body": "# Generated password modal flashes and disappears when creating a user from an empty group's detail page\n\n## Summary\n\nOn self-hosted with the embedded IdP, creating a user via **Access Control → Groups → *(group)* → Add User → Create User** shows the \"User created successfully!\" modal containing the generated password for a fraction of a second, then it vanishes before the password can be read or copied.\n\nThe user account *is* created successfully — but its password is displayed exactly once, and once lost there is no recovery path from the dashboard: the account is dead and must be **deleted and re-created**.\n\nThis is what makes the bug more than cosmetic. The only password-change surface in the dashboard is `ChangePasswordModal`, which is mounted solely in `UserDropdown` (self-service, for the logged-in user) and `PUT`s `/users/{id}/password` with a required `old_password` — so it cannot help here on two counts: an admin cannot invoke it against another user, and the credential it demands is precisely the one that was just lost. An admin-initiated reset appears to be deliberately absent rather than an oversight, so there is no \"just reset it\" fallback.\n\nThe same modal works correctly from **Team → Users → Add User**.\n\n**Trigger condition: the group must have had zero users before the creation.** Creating a user from a group that already has members works fine.\n\n| Entry point | Group state | Create User | Invite User |\n|---|---|---|---|\n| Team → Users | n/a | ✅ works | ✅ wor\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 398,
+      "title": "Auth endpoint returns 404 on successful login",
+      "state": "open",
+      "labels": [
+        {
+          "name": "bug"
+        },
+        {
+          "name": "self-hosted"
+        }
+      ],
+      "created_at": "2024-07-04T19:14:41Z",
+      "updated_at": "2026-08-10T07:43:04Z",
+      "comments": 4,
+      "body": "**Describe the problem**\n\nAfter implementation of custom error pages into ingress controller (Traefik with error middleware) I've noticed that /auth endpoint returns code 404 to the browser even though the auth has succeeded. This error code breaks the error handling implemented by reverse proxies because it forwards the traffic to the container managing 400-599 error codes.\n\n**To Reproduce**\n\nSteps to reproduce the behavior:\n1. Deploy the dashboard with Zitadel auth behind traefik reverse proxy\n2. Open up the Netbird dashboard\n3. Login into Zitadel\n4. Login should succeed but /auth endpoint will return 404 error code\n\n**Expected behavior**\n\nauth endpoint should respond with non error HTTP status code\n\n**Are you using NetBird Cloud?**\n\nNo\n\n**NetBird version**\n\nDashboard: v2.4.0\nNetbird: v0.28.4\n\n**NetBird status -d output:**\n\n/\n\n**Screenshots**\n\n![image](https://github.com/netbirdio/dashboard/assets/72018369/819dd8fd-3494-403a-ae7f-77581992ef96)\n\n\n**Additional context**\n\nNot sure if it's relevant but I'm using different domains for Netbird (nb.domain.com) and Netbird dashboard (nb.int.domain.com)\n\nDashboard environment variables:\n```\nNETBIRD_MGMT_API_ENDPOINT: \"https://nb.domain.com\"\nNETBIRD_MGMT_GRPC_API_ENDPOINT: \"https://nb.domain.com\"\nAUTH_AUTHORITY: https://auth.domain.com\nAUTH_AUDIENCE: \"client_id\"\nAUTH_CLIENT_ID: \"client_id\"\nUSE_AUTH0: \"false\"\nAUTH_SUPPORTED_SCOPES: \"openid profile email offline_access\"\nAUTH_REDIRECT_URI: \"/auth\"\nAUTH_SILENT_REDIRECT_URI: \"/silent-auth\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 597,
+      "title": "geo blocking by country blocks local IP",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        }
+      ],
+      "created_at": "2026-03-26T05:40:04Z",
+      "updated_at": "2026-08-12T11:53:53Z",
+      "comments": 17,
+      "body": "**Describe the problem**\n\nHello,\nI selfhost netbird and I use the reverse proxy. I configured the urls to be accessible only in France. The issue is when I try to connect to service at home, I have the IP 192.168.1.254, which is not France, and I receive a Forbidden response.\nHere the logs \nnetbird-proxy] 2026-03-26T05:26:19.895Z DEBG proxy/internal/auth/middleware.go:100: checking authentication for host: music.netbird.mydomain.fr, exists: true\n[netbird-proxy] 2026-03-26T05:26:19.896Z DEBG proxy/internal/auth/middleware.go:201: IP restriction: country_restricted for 192.168.1.254:60856\n\n**To Reproduce**\n\nSteps to reproduce the behavior:\n1. Configure geo blocking on a service\n2. Allow only your country\n3. Connect to the service at home\n4. See error\n\n**Expected behavior**\n\nI expect to access my service when I am at home.\nThe existing geoblocking middleware in traefik plugins allows to specify ip and ip range to bypass the geo blocking restrictions, it should be great to have the same with an env variable for example?\nI can't apply geoblocking by country if I can't access services at home.\n\n**Are you using NetBird Cloud?**\n\nSelf-host NetBird's control plane.\n\n**NetBird version**\n\n0.67.0\n\n**NetBird status -d output:**\n\nIf applicable, add the `netbird status -d' command output.\n\n**Screenshots**\n\n![Screenshot_20260326_063652_Firefox.jpg](https://github.com/user-attachments/assets/8cf8de20-3704-46b8-a30e-e02af23d6329)\n\n\n\n**Additional context**\n\nAdd any other context about the probl\n\n[excerpt truncated in sample snapshot]"
+    },
+    {
+      "repository": "netbirdio/dashboard",
+      "number": 632,
+      "title": "Publish dashboard image to GitHub Container Registry (ghcr.io)",
+      "state": "open",
+      "labels": [
+        {
+          "name": "needs-triage"
+        },
+        {
+          "name": "feature-request"
+        }
+      ],
+      "created_at": "2026-05-05T16:40:46Z",
+      "updated_at": "2026-07-31T12:24:52Z",
+      "comments": 1,
+      "body": "**Is your feature request related to a problem? Please describe.**\n\nWhen self-hosting NetBira**Is your feature request related to a problem? Please describe.**\n\nWhen self-hosting NetBird, four of the five images that make up the\nstack `netbird`, `management`, `signal`, `relay` are published on\nGitHub Container Registry (`ghcr.io/netbirdio/...`). The dashboard is\nthe only one that lives exclusively on Docker Hub.\n\nThis split causes a few small but recurring annoyances for self-hosters:\n\n- **Renovate (and similar bots) can't surface release notes for the\n  dashboard.** Because GHCR images are tied to their GitHub repo,\n  Renovate automatically attaches the matching release notes to every\n  update PR for the four other components. The dashboard, coming from\n  Docker Hub, has no such link its update PRs land \"naked\", with\n  just a version bump and no changelog context. So out of five\n  NetBird images, four PRs are informative and one is silent.\n\n- **No unified release view for the stack.** If everything were on\n  GHCR under `netbirdio`, self-hosters could follow a single coherent\n  release timeline for the whole NetBird stack on GitHub. Today, the\n  dashboard's release notes have to be tracked separately, on a\n  different platform.\n\n- **Inconsistent registry pinning.** It is currently impossible to\n  keep the whole NetBird stack on a single registry, which complicates\n  internal mirrors, firewall whitelists, and avoiding Docker Hub\n  rate-limit headaches.\n\n**Describe the solution\n\n[excerpt truncated in sample snapshot]"
+    }
+  ]
+}

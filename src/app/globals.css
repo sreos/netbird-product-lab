@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* Design tokens. Light by default, dark via the user's OS preference. No JS needed. */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --ink: #12161c;
+  --muted: #4b5563;
+  --line: #d6dce5;
+  --accent: #2443bd;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6ecfc;
+  --ok: #136a3b;
+  --ok-soft: #e1f3e8;
+  --warn: #84500a;
+  --warn-soft: #fcefd4;
+  --danger: #a3271c;
+  --danger-soft: #fbe5e2;
+  --violet: #5b3aa8;
+  --violet-soft: #eee8fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --surface: #151b23;
+    --surface-2: #1c2430;
+    --ink: #e8ecf2;
+    --muted: #a3afbf;
+    --line: #2b3542;
+    --accent: #8fb0ff;
+    --accent-ink: #0d1117;
+    --accent-soft: #1b2947;
+    --ok: #62d296;
+    --ok-soft: #12301f;
+    --warn: #f1bb55;
+    --warn-soft: #36280e;
+    --danger: #ff9188;
+    --danger-soft: #3d1a17;
+    --violet: #bba2f5;
+    --violet-soft: #2a2145;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.55;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip link: hidden until focused */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 100;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .badge-outline {
+    border: 1px solid CanvasText;
+  }
+}
