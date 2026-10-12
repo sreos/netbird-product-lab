@@ -56,6 +56,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Data** | Open issues from `netbirdio/netbird` and `netbirdio/dashboard` via the GitHub REST API. Title, source link, labels, created date, comment count, and description. Pull requests are filtered out. |
 | **Resilience** | Server-side fetch cached for 15 minutes. If GitHub is rate-limited, slow, or down, **each repository independently falls back** to a bundled snapshot of real issues, and a banner says which repo and why. |
 | **Filtering** | Free-text search, repository filter, five category filters plus "Uncategorized", four sort orders, live counts, and a clear-filters action. |
+| **Related issues and themes** | Finds issues that use the same distinctive wording and groups them into "possible themes" you can filter by. Each link shows **the shared words behind it**, and the interface states that this is wording overlap, not meaning, and never calls anything a confirmed duplicate. See [how it works](#related-issues-and-themes-srclibsimilarityts). |
 | **Shareable views** | Filters, sort, and the selected issue live in the URL, so `/?cat=reliability&issue=netbird-5513` opens that exact view. "Copy link to this view" builds it for you. Edited scores are deliberately **not** in links (they stay in each person's browser); share a prioritized ticket by copying its Markdown. |
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
@@ -96,6 +97,18 @@ Example: issue #5513 has only a `triage-needed` label, so its categories come pu
 | **Effort** | 3, fixed | **Never inferred.** Effort needs an engineering estimate, and the UI says so. |
 
 Comment counts are an *engagement proxy*, not measured user impact. The model is deliberately small enough to read in one sitting, so a reviewer can disagree with it.
+
+### Related issues and themes ([`src/lib/similarity.ts`](src/lib/similarity.ts))
+
+Deterministic and dependency-free, in five steps:
+
+1. **Tokenize** title and description (the first 1,500 characters): lower-case, drop code blocks, URLs, numbers, stop words and issue-template boilerplate, then apply a light stemmer so "reconnecting" and "reconnected" match. Title words count three times as much as description words.
+2. **Weigh** words with TF-IDF, so common words matter little and distinctive ones matter a lot. Words that appear in more than half of the issues are ignored.
+3. **Compare** issues with cosine similarity.
+4. **Gate** the result. A raw similarity score is not trusted, because boilerplate in descriptions produces confident-looking nonsense. Two issues are only linked if they share a word that appears in **both titles**, and either that word is rare or they share at least two distinctive words in total.
+5. **Cluster** linked issues into themes with average-link clustering, capped at 8 issues per theme. A theme is labelled with the words most of its members share.
+
+**How the thresholds were chosen, and what that does and does not prove.** I ranked all issue pairs from the 62 live issues available on 12 Oct 2026 and read them, adjusting stop words and the title rule where the top results were clearly wrong (for example links created by "help / file / screenshots / attach" from the bug template, or by "docker" alone). In that informal review most of the 11 resulting themes looked sensible (for instance RPC errors, reverse-proxy reports, and two latency reports) and a few were weak (for instance "firewall · software · check"). This is a hand review, **not a benchmark**: there is no labelled ground truth, and precision and recall are unmeasured. The unit tests pin the behaviour of each rule, and were checked by deliberately breaking each rule to confirm that a test fails.
 
 ### Ticket templates ([`src/lib/ticket.ts`](src/lib/ticket.ts))
 
@@ -152,7 +165,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-95 tests in 12 files cover:
+124 tests in 14 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
@@ -160,6 +173,8 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 - **Ticket templates:** determinism, required sections, every category, "never presented as verified".
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
 - **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
+- **Similarity:** stemming and tokenizing, linking real related reports, the "rare word in both titles" rule, no links from boilerplate or description-only overlap, thresholds, symmetry, theme size cap, determinism. Each rule was verified by temporarily breaking it and confirming that a test fails.
+- **Related issues and themes UI:** theme filtering and its URL, stale theme links, related lists with shared words and caveats, jumping to a related issue (clearing a filter that would hide it), and the honest "nothing related" message.
 - **URL state:** parsing and serializing views, safe fallbacks for unknown or hostile parameters, restoring a view on load, keeping the address bar in sync, the "linked issue is not loaded" notice, and that copied links carry no scores.
 
 The build was also checked with the **axe-core** automated accessibility engine in light and dark themes (0 violations on the board, a selected issue, and the case study). That is an automated scan, not a substitute for manual screen-reader testing.
@@ -184,12 +199,14 @@ The production build succeeds with or without network access, because a failed f
 | **Deterministic ticket templates** instead of AI drafting | Reproducible, no keys, no user data leaves the app | Generic text; a human adds the specifics |
 | **`localStorage` for edits** instead of a database | No backend, no accounts, no secrets | Edits do not sync across devices or people |
 | **Only view state in shareable URLs, not scores** | A link can never silently overwrite someone else's own edits, and nothing about a triage is stored server-side | A shared link shows the viewer's own (or suggested) scores; sharing a prioritized ticket means copying its Markdown |
+| **Wording-overlap similarity** instead of embeddings or an LLM | Free, deterministic, explainable (the shared words are shown), runs in the browser with no data leaving it | Misses duplicates phrased differently and sometimes links issues that merely share jargon, so it is presented as "possibly related" only |
 | **Plain-text issue bodies** instead of rendering Markdown | Removes a whole class of injection risk from untrusted text | Loses most formatting |
 | **First page only** (the 60 most recently updated open items per repository) | Small, fast, rate-limit friendly | Not the complete backlog |
 
 ## Limitations
 
 - **Not a complete backlog.** Only the 60 most recently updated open items per repository are read, and pull requests are removed, so you typically see fewer than 120 issues (63 at the time of the screenshots).
+- **Related issues and themes are wording overlap, not understanding.** Some links are weak or wrong, and real duplicates phrased differently are missed. Only the loaded issues are compared, and themes can change as the data changes.
 - **Categories and scores are heuristics.** They can be wrong. They are labelled as suggestions in the interface for that reason.
 - **Comments are not read.** Only the issue description and the comment *count* are used. The case study's summary of the discussion was written by hand from the public thread on 12 Oct 2026.
 - **The case study is a snapshot.** The issue may change after that date. The page shows live metadata (state, dates, comments) when GitHub is reachable, but the analysis text does not update itself. At the time of writing, a maintainer had asked the reporter to retest on a newer release, so whether the problem still exists is **unknown**, and the case study is built around that.
@@ -209,7 +226,7 @@ The production build succeeds with or without network access, because a failed f
 
 **Next**
 
-- Duplicate and related-issue detection.
+- Optional semantic similarity (embeddings), clearly labelled and compared against the current wording-overlap baseline.
 - Read and summarize issue comments, with the source comment linked for every claim.
 - Configurable label vocabulary and scoring weights, with the configuration shown on screen.
 - Trend view: new issues per category over time.
@@ -232,13 +249,15 @@ src/
   components/
     TriageBoard.tsx           Filters, sorting, selection, persisted score edits
     IssueCard.tsx, IssueDetail.tsx
-    ScoringPanel.tsx, TicketPanel.tsx, TicketView.tsx
+    ScoringPanel.tsx, TicketPanel.tsx, TicketEditor.tsx, TicketView.tsx
+    ThemesPanel.tsx, RelatedIssues.tsx   Themes filter and related-issue list
     ConnectionStateMock.tsx   Interactive concept mock for the case study
     PlainText.tsx             Safe rendering of untrusted text
   lib/
     github.ts                 Read-only GitHub client, caching, per-repo fallback (server-only)
     normalize.ts, text.ts     Payload mapping and sanitizing
-    categorize.ts, scoring.ts, ticket.ts   Pure, tested logic
+    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts   Pure, tested logic
+    useStoredRecord.ts        Per-issue localStorage with validation of stored data
   data/
     sample-issues.json        Snapshot of real public issues (12 Oct 2026)
     sample.ts

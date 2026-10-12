@@ -21,9 +21,18 @@ export interface ViewState {
   sort: SortKey;
   /** Explicitly selected issue id, e.g. "netbirdio/netbird#5513". */
   issueId: string | null;
+  /** Active theme filter, identified by the id of its smallest member (see similarity.ts). */
+  themeId: string | null;
 }
 
-export const DEFAULT_VIEW: ViewState = { query: "", repo: "all", category: "all", sort: "priority", issueId: null };
+export const DEFAULT_VIEW: ViewState = {
+  query: "",
+  repo: "all",
+  category: "all",
+  sort: "priority",
+  issueId: null,
+  themeId: null,
+};
 
 const MAX_QUERY_LENGTH = 200;
 
@@ -62,6 +71,7 @@ export function parseView(search: string): ViewState {
     category,
     sort,
     issueId: parseIssueKey(params.get("issue") ?? ""),
+    themeId: parseIssueKey(params.get("theme") ?? ""),
   };
 }
 
@@ -72,6 +82,7 @@ export function serializeView(view: ViewState): string {
   if (view.repo !== DEFAULT_VIEW.repo) params.set("repo", view.repo.split("/")[1]);
   if (view.category !== DEFAULT_VIEW.category) params.set("cat", view.category);
   if (view.sort !== DEFAULT_VIEW.sort) params.set("sort", view.sort);
+  if (view.themeId) params.set("theme", issueKey(view.themeId));
   if (view.issueId) params.set("issue", issueKey(view.issueId));
   const qs = params.toString();
   return qs ? `?${qs}` : "";

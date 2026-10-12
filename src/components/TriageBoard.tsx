@@ -13,11 +13,13 @@ import {
   type ScoreSuggestion,
 } from "@/lib/scoring";
 import { sanitizeEdits, type TicketEdits } from "@/lib/ticketEdits";
+import { buildSimilarity } from "@/lib/similarity";
 import { REPOS, type Issue, type RepoSlug } from "@/lib/types";
 import { issueKey, parseView, serializeView, type CategoryFilter, type SortKey } from "@/lib/urlState";
 import { useStoredRecord } from "@/lib/useStoredRecord";
 import { IssueCard } from "./IssueCard";
 import { IssueDetail } from "./IssueDetail";
+import { ThemesPanel } from "./ThemesPanel";
 
 const SCORES_KEY = "nbpl:score-overrides:v1";
 const TICKETS_KEY = "nbpl:ticket-edits:v1";
@@ -56,6 +58,7 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
   const [repo, setRepo] = useState<RepoSlug | "all">("all");
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [sort, setSort] = useState<SortKey>("priority");
+  const [themeId, setThemeId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Per-issue edits live in this browser only (localStorage), loaded after mount.
   const [overrides, setOverrides] = useStoredRecord<ScoreOverrides>(SCORES_KEY, sanitizeScoreOverrides);
@@ -75,6 +78,7 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
     setRepo(view.repo);
     setCategory(view.category);
     setSort(view.sort);
+    setThemeId(view.themeId);
     if (view.issueId) {
       if (rows.some((r) => r.issue.id === view.issueId)) {
         setSelectedId(view.issueId);
@@ -98,20 +102,33 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
     // Runs once on mount; `rows` comes from props and is stable for this page.
   }, []);
 
+  // Wording-overlap links between issues (see src/lib/similarity.ts). Deterministic, so the server
+  // render and the client agree.
+  const similarity = useMemo(() => buildSimilarity(issues), [issues]);
+  const issueById = useMemo(() => new Map(issues.map((i) => [i.id, i])), [issues]);
+  // A theme id from a stale link may no longer exist; then there is simply no theme filter.
+  const activeTheme = themeId ? similarity.themes.find((t) => t.id === themeId) : undefined;
+
   // Keep the address bar in sync so the current view can be shared. replaceState (not pushState)
   // avoids filling the back button with one entry per keystroke.
   useEffect(() => {
     if (!hydrated) return;
-    const qs = serializeView({ query, repo, category, sort, issueId: selectedId });
+    const qs = serializeView({ query, repo, category, sort, issueId: selectedId, themeId: activeTheme?.id ?? null });
     window.history.replaceState(null, "", `${window.location.pathname}${qs}${window.location.hash}`);
-  }, [hydrated, query, repo, category, sort, selectedId]);
+  }, [hydrated, query, repo, category, sort, selectedId, activeTheme?.id]);
 
   const scoresFor = (row: Row) => resolveScores(row.suggestion.scores, overrides[row.issue.id]);
 
   const matchesSearch = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows.filter((r) => (repo === "all" || r.issue.repo === repo) && (!q || r.haystack.includes(q)));
-  }, [rows, repo, query]);
+    const members = activeTheme ? new Set(activeTheme.issueIds) : null;
+    return rows.filter(
+      (r) =>
+        (repo === "all" || r.issue.repo === repo) &&
+        (!q || r.haystack.includes(q)) &&
+        (!members || members.has(r.issue.id)),
+    );
+  }, [rows, repo, query, activeTheme]);
 
   const counts = useMemo(() => {
     const c: Record<CategoryFilter, number> = {
@@ -152,7 +169,11 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
   }, [matchesSearch, category, sort, overrides]);
 
   const selected = visible.find((r) => r.issue.id === selectedId) ?? visible[0] ?? null;
-  const filtersActive = query.trim() !== "" || repo !== "all" || category !== "all";
+  const filtersActive = query.trim() !== "" || repo !== "all" || category !== "all" || activeTheme !== undefined;
+  const relatedToSelected = useMemo(
+    () => (selected ? similarity.related(selected.issue.id) : []),
+    [similarity, selected],
+  );
 
   function select(id: string) {
     setSelectedId(id);
@@ -204,6 +225,16 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
     setQuery("");
     setRepo("all");
     setCategory("all");
+    setThemeId(null);
+  }
+
+  /** Jump to a related issue, dropping any filter that would hide it. */
+  function selectRelated(id: string) {
+    if (!visible.some((r) => r.issue.id === id)) clearFilters();
+    select(id);
+    if (!isNarrowScreen()) {
+      requestAnimationFrame(() => document.getElementById(`issue-${issueKey(id)}`)?.scrollIntoView?.({ block: "nearest" }));
+    }
   }
 
   const pills: { id: CategoryFilter; label: string }[] = [
@@ -289,6 +320,16 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
         </p>
       </div>
 
+      {similarity.themes.length > 0 && (
+        <div className="mt-4">
+          <ThemesPanel
+            themes={similarity.themes}
+            activeId={activeTheme?.id ?? null}
+            onToggle={(id) => setThemeId((current) => (current === id ? null : id))}
+          />
+        </div>
+      )}
+
       <p role="status" aria-live="polite" className="mt-4 text-sm text-muted">
         Showing {visible.length} of {rows.length} issues
         {filtersActive && (
@@ -370,6 +411,12 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
                 onScoreReset={() => resetScores(selected.issue.id)}
                 ticketEdits={ticketEdits[selected.issue.id]}
                 onTicketEdits={(next) => changeTicketEdits(selected.issue.id, next)}
+                related={relatedToSelected}
+                theme={similarity.themeOf(selected.issue.id)}
+                activeThemeId={activeTheme?.id ?? null}
+                lookupIssue={(id) => issueById.get(id)}
+                onSelectRelated={selectRelated}
+                onShowTheme={setThemeId}
               />
             </aside>
           )}

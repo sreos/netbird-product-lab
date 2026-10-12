@@ -3,12 +3,14 @@
 import { useState } from "react";
 import type { Categorization } from "@/lib/categorize";
 import type { ScoreKey, ScoreOverrides, ScoreSuggestion, Scores } from "@/lib/scoring";
+import type { RelatedMatch, Theme } from "@/lib/similarity";
 import { formatDate } from "@/lib/text";
 import type { TicketEdits } from "@/lib/ticketEdits";
 import type { Issue } from "@/lib/types";
 import { issueKey } from "@/lib/urlState";
 import { CategoryBadge, GitHubLabel } from "./CategoryBadge";
 import { PlainText } from "./PlainText";
+import { RelatedIssues } from "./RelatedIssues";
 import { ScoringPanel } from "./ScoringPanel";
 import { TicketPanel } from "./TicketPanel";
 
@@ -22,6 +24,12 @@ export interface DetailProps {
   onScoreReset: () => void;
   ticketEdits: TicketEdits | undefined;
   onTicketEdits: (next: TicketEdits | undefined) => void;
+  related: RelatedMatch[];
+  theme: Theme | undefined;
+  activeThemeId: string | null;
+  lookupIssue: (issueId: string) => Issue | undefined;
+  onSelectRelated: (issueId: string) => void;
+  onShowTheme: (themeId: string) => void;
 }
 
 const PREVIEW_CHARS = 700;
@@ -36,6 +44,12 @@ export function IssueDetail({
   onScoreReset,
   ticketEdits,
   onTicketEdits,
+  related,
+  theme,
+  activeThemeId,
+  lookupIssue,
+  onSelectRelated,
+  onShowTheme,
 }: DetailProps) {
   const [expanded, setExpanded] = useState(false);
   const [linkStatus, setLinkStatus] = useState("");
@@ -177,6 +191,15 @@ export function IssueDetail({
           </div>
         )}
       </section>
+
+      <RelatedIssues
+        matches={related}
+        theme={theme}
+        activeThemeId={activeThemeId}
+        lookup={lookupIssue}
+        onSelect={onSelectRelated}
+        onShowTheme={onShowTheme}
+      />
 
       <ScoringPanel
         issueId={issue.id}

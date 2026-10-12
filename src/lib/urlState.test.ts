@@ -22,13 +22,19 @@ describe("parseView", () => {
   });
 
   it("reads every supported parameter", () => {
-    expect(parseView("?q=sso&repo=dashboard&cat=ux&sort=updated&issue=netbird-5513")).toEqual({
+    expect(parseView("?q=sso&repo=dashboard&cat=ux&sort=updated&issue=netbird-5513&theme=netbird-2860")).toEqual({
       query: "sso",
       repo: "netbirdio/dashboard",
       category: "ux",
       sort: "updated",
       issueId: "netbirdio/netbird#5513",
+      themeId: "netbirdio/netbird#2860",
     });
+  });
+
+  it("ignores a malformed theme parameter", () => {
+    expect(parseView("?theme=../../x").themeId).toBeNull();
+    expect(parseView("?theme=other-1").themeId).toBeNull();
   });
 
   it("accepts the 'uncategorized' filter", () => {
@@ -58,8 +64,11 @@ describe("serializeView", () => {
       category: "reliability" as const,
       sort: "comments" as const,
       issueId: "netbirdio/netbird#5513",
+      themeId: "netbirdio/netbird#2860",
     };
-    expect(serializeView(view)).toBe("?q=token+expiry&repo=netbird&cat=reliability&sort=comments&issue=netbird-5513");
+    expect(serializeView(view)).toBe(
+      "?q=token+expiry&repo=netbird&cat=reliability&sort=comments&theme=netbird-2860&issue=netbird-5513",
+    );
     expect(parseView(serializeView(view))).toEqual(view);
   });
 });
