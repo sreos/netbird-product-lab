@@ -57,6 +57,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Resilience** | Server-side fetch cached for 15 minutes. If GitHub is rate-limited, slow, or down, **each repository independently falls back** to a bundled snapshot of real issues, and a banner says which repo and why. |
 | **Filtering** | Free-text search, repository filter, five category filters plus "Uncategorized", four sort orders, live counts, and a clear-filters action. |
 | **Related issues and themes** | Finds issues that use the same distinctive wording and groups them into "possible themes" you can filter by. Each link shows **the shared words behind it**, and the interface states that this is wording overlap, not meaning, and never calls anything a confirmed duplicate. See [how it works](#related-issues-and-themes-srclibsimilarityts). |
+| **Discussion on demand** | "Load the discussion" fetches an issue's comments (the oldest 50) through a small read-only server endpoint, shows whether **the project team has responded** (owner, member, or collaborator, according to GitHub), and links every comment to the original. Never loaded automatically, to protect the rate limit. Commenter usernames are deliberately not shown or stored. |
 | **Shareable views** | Filters, sort, and the selected issue live in the URL, so `/?cat=reliability&issue=netbird-5513` opens that exact view. "Copy link to this view" builds it for you. Edited scores are deliberately **not** in links (they stay in each person's browser); share a prioritized ticket by copying its Markdown. |
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
@@ -129,6 +130,7 @@ flowchart LR
 - **Server-side data access.** GitHub is called only from server code (`src/lib/github.ts` imports `server-only`). The browser never talks to GitHub, so there is no CORS concern and the optional token can never leak.
 - **Static with revalidation.** Both pages are statically generated and revalidated every 15 minutes (`revalidate = 900`). With two repositories plus the case study, that is roughly a dozen GitHub requests per hour regardless of how many people visit.
 - **One normalizer for live and sample data.** The sample snapshot is stored in GitHub's own payload shape and runs through the same `normalizeIssue` path, so the fallback exercises the production code.
+- **One small dynamic endpoint.** `GET /api/comments?issue=netbird-5513` runs on the server, makes one `GET` to GitHub, and returns comments reduced to role, date, link, and cleaned text. It only serves issues that are in the loaded data (so it cannot be used to enumerate arbitrary issue numbers and burn the shared rate limit), validates its input, caches successes for 15 minutes at the edge, and never caches errors.
 - **Untrusted text stays inert.** Issue bodies are plain text rendered by React (escaped). Only `**bold**` and `` `code` `` are formatted, built as React elements, never as HTML. Issue URLs are rebuilt from repository and number, never taken from the API payload.
 - **Pure logic, thin UI.** Categorization, scoring, and ticket drafting are pure functions with unit tests. Components stay small.
 - **Read-only by construction.** One function issues network requests, and it only sends `GET`. A test asserts this.
@@ -165,7 +167,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-124 tests in 14 files cover:
+153 tests in 18 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
@@ -174,6 +176,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
 - **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
 - **Similarity:** stemming and tokenizing, linking real related reports, the "rare word in both titles" rule, no links from boilerplate or description-only overlap, thresholds, symmetry, theme size cap, determinism. Each rule was verified by temporarily breaking it and confirming that a test fails.
+- **Discussion:** comment normalization (roles, team flag, bots, no usernames), the team-response summary, and the endpoint (input validation, loaded-issues-only with a check that GitHub is never called otherwise, 429 and 502 mapping, no caching of errors, sample mode, no leakage of internal errors), plus the panel's idle, loading, ready, partial-thread, error, retry, and hostile-text states.
 - **Related issues and themes UI:** theme filtering and its URL, stale theme links, related lists with shared words and caveats, jumping to a related issue (clearing a filter that would hide it), and the honest "nothing related" message.
 - **URL state:** parsing and serializing views, safe fallbacks for unknown or hostile parameters, restoring a view on load, keeping the address bar in sync, the "linked issue is not loaded" notice, and that copied links carry no scores.
 
@@ -208,7 +211,7 @@ The production build succeeds with or without network access, because a failed f
 - **Not a complete backlog.** Only the 60 most recently updated open items per repository are read, and pull requests are removed, so you typically see fewer than 120 issues (63 at the time of the screenshots).
 - **Related issues and themes are wording overlap, not understanding.** Some links are weak or wrong, and real duplicates phrased differently are missed. Only the loaded issues are compared, and themes can change as the data changes.
 - **Categories and scores are heuristics.** They can be wrong. They are labelled as suggestions in the interface for that reason.
-- **Comments are not read.** Only the issue description and the comment *count* are used. The case study's summary of the discussion was written by hand from the public thread on 12 Oct 2026.
+- **Comments are shown, not analysed.** Scoring, categories, and similarity use only the issue title and description. The discussion panel loads the oldest 50 comments on request and reports who wrote them (team or community) but does not summarize or interpret them. The case study's reading of the thread was written by hand from the public discussion on 12 Oct 2026.
 - **The case study is a snapshot.** The issue may change after that date. The page shows live metadata (state, dates, comments) when GitHub is reachable, but the analysis text does not update itself. At the time of writing, a maintainer had asked the reporter to retest on a newer release, so whether the problem still exists is **unknown**, and the case study is built around that.
 - **The mock UX is a concept.** It is not NetBird's interface, and its CLI wording is invented.
 - **The sample snapshot is old by design.** It was taken on 12 Oct 2026, with descriptions cut to 1,500 characters.
@@ -245,18 +248,20 @@ src/
   app/
     page.tsx                  Triage board (server component, revalidated every 15 min)
     case-study/5513/page.tsx  Case study
+    api/comments/route.ts     Read-only, validated, cached comments endpoint
     loading.tsx, error.tsx, not-found.tsx
   components/
     TriageBoard.tsx           Filters, sorting, selection, persisted score edits
     IssueCard.tsx, IssueDetail.tsx
     ScoringPanel.tsx, TicketPanel.tsx, TicketEditor.tsx, TicketView.tsx
     ThemesPanel.tsx, RelatedIssues.tsx   Themes filter and related-issue list
+    DiscussionPanel.tsx       On-demand comments with a team-response summary
     ConnectionStateMock.tsx   Interactive concept mock for the case study
     PlainText.tsx             Safe rendering of untrusted text
   lib/
     github.ts                 Read-only GitHub client, caching, per-repo fallback (server-only)
     normalize.ts, text.ts     Payload mapping and sanitizing
-    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts   Pure, tested logic
+    categorize.ts, scoring.ts, ticket.ts, ticketEdits.ts, similarity.ts, urlState.ts, comments.ts   Pure, tested logic
     useStoredRecord.ts        Per-issue localStorage with validation of stored data
   data/
     sample-issues.json        Snapshot of real public issues (12 Oct 2026)

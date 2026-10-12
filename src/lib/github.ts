@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSampleIssues, SAMPLE_SNAPSHOT_DATE } from "@/data/sample";
+import { normalizeComment, type IssueComment, type RawComment } from "./comments";
 import { normalizeIssue } from "./normalize";
 import { REPOS, type FeedSource, type Issue, type IssueFeed, type RawIssue, type RepoSlug, type RepoStatus } from "./types";
 
@@ -106,6 +107,19 @@ export async function getIssueFeed(fetchImpl?: typeof fetch): Promise<IssueFeed>
     fetchedAt: new Date().toISOString(),
     sampleSnapshotDate: SAMPLE_SNAPSHOT_DATE,
   };
+}
+
+/** Comments fetched per request: the oldest page of the thread. */
+export const COMMENTS_PER_PAGE = 50;
+
+/** The first page of an issue's comments (oldest first), normalized. Read-only, cached like everything else. */
+export async function fetchIssueComments(repo: RepoSlug, number: number, fetchImpl?: typeof fetch): Promise<IssueComment[]> {
+  const json = await githubGet(`/repos/${repo}/issues/${number}/comments?per_page=${COMMENTS_PER_PAGE}`, fetchImpl);
+  if (!Array.isArray(json)) throw new GitHubError("invalid", "GitHub returned an unexpected response shape");
+  return json.flatMap((raw) => {
+    const comment = normalizeComment(raw as RawComment, repo, number);
+    return comment ? [comment] : [];
+  });
 }
 
 export interface SingleIssueResult {

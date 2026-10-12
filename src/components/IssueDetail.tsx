@@ -9,6 +9,7 @@ import type { TicketEdits } from "@/lib/ticketEdits";
 import type { Issue } from "@/lib/types";
 import { issueKey } from "@/lib/urlState";
 import { CategoryBadge, GitHubLabel } from "./CategoryBadge";
+import { DiscussionPanel } from "./DiscussionPanel";
 import { PlainText } from "./PlainText";
 import { RelatedIssues } from "./RelatedIssues";
 import { ScoringPanel } from "./ScoringPanel";
@@ -191,6 +192,8 @@ export function IssueDetail({
           </div>
         )}
       </section>
+
+      <DiscussionPanel issue={issue} />
 
       <RelatedIssues
         matches={related}
