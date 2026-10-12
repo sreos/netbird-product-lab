@@ -102,6 +102,17 @@ export function suggestScores(
   };
 }
 
+/** Validates stored score overrides (localStorage content is untrusted). */
+export function sanitizeScoreOverrides(value: unknown): ScoreOverrides | null {
+  if (!value || typeof value !== "object") return null;
+  const out: ScoreOverrides = {};
+  for (const key of SCORE_KEYS) {
+    const n = (value as Record<string, unknown>)[key];
+    if (typeof n === "number") out[key] = clampScore(n);
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export function resolveScores(suggested: Scores, overrides?: ScoreOverrides): Scores {
   return {
     impact: overrides?.impact !== undefined ? clampScore(overrides.impact) : suggested.impact,

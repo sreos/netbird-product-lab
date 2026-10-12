@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Categorization } from "@/lib/categorize";
 import type { ScoreKey, ScoreOverrides, ScoreSuggestion, Scores } from "@/lib/scoring";
 import { formatDate } from "@/lib/text";
+import type { TicketEdits } from "@/lib/ticketEdits";
 import type { Issue } from "@/lib/types";
 import { issueKey } from "@/lib/urlState";
 import { CategoryBadge, GitHubLabel } from "./CategoryBadge";
@@ -19,11 +20,23 @@ export interface DetailProps {
   scores: Scores;
   onScoreChange: (key: ScoreKey, value: number) => void;
   onScoreReset: () => void;
+  ticketEdits: TicketEdits | undefined;
+  onTicketEdits: (next: TicketEdits | undefined) => void;
 }
 
 const PREVIEW_CHARS = 700;
 
-export function IssueDetail({ issue, categorization, suggestion, overrides, scores, onScoreChange, onScoreReset }: DetailProps) {
+export function IssueDetail({
+  issue,
+  categorization,
+  suggestion,
+  overrides,
+  scores,
+  onScoreChange,
+  onScoreReset,
+  ticketEdits,
+  onTicketEdits,
+}: DetailProps) {
   const [expanded, setExpanded] = useState(false);
   const [linkStatus, setLinkStatus] = useState("");
   const long = issue.body.length > PREVIEW_CHARS;
@@ -174,7 +187,7 @@ export function IssueDetail({ issue, categorization, suggestion, overrides, scor
         onReset={onScoreReset}
       />
 
-      <TicketPanel issue={issue} categorization={categorization} scores={scores} />
+      <TicketPanel issue={issue} categorization={categorization} scores={scores} edits={ticketEdits} onEdits={onTicketEdits} />
     </div>
   );
 }

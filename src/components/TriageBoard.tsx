@@ -6,17 +6,21 @@ import {
   clampScore,
   priorityScore,
   resolveScores,
+  sanitizeScoreOverrides,
   suggestScores,
   type ScoreKey,
   type ScoreOverrides,
   type ScoreSuggestion,
 } from "@/lib/scoring";
+import { sanitizeEdits, type TicketEdits } from "@/lib/ticketEdits";
 import { REPOS, type Issue, type RepoSlug } from "@/lib/types";
 import { issueKey, parseView, serializeView, type CategoryFilter, type SortKey } from "@/lib/urlState";
+import { useStoredRecord } from "@/lib/useStoredRecord";
 import { IssueCard } from "./IssueCard";
 import { IssueDetail } from "./IssueDetail";
 
-const STORAGE_KEY = "nbpl:score-overrides:v1";
+const SCORES_KEY = "nbpl:score-overrides:v1";
+const TICKETS_KEY = "nbpl:ticket-edits:v1";
 
 interface Row {
   issue: Issue;
@@ -31,36 +35,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   comments: "Most comments",
   created: "Newest created",
 };
-
-function loadOverrides(): Record<string, ScoreOverrides> {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: Record<string, ScoreOverrides> = {};
-    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!value || typeof value !== "object") continue;
-      const clean: ScoreOverrides = {};
-      for (const key of ["impact", "urgency", "effort"] as const) {
-        const n = (value as Record<string, unknown>)[key];
-        if (typeof n === "number") clean[key] = clampScore(n);
-      }
-      if (Object.keys(clean).length > 0) out[id] = clean;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function saveOverrides(overrides: Record<string, ScoreOverrides>) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-  } catch {
-    // Storage can be unavailable (private mode, blocked). The app works without persistence.
-  }
-}
 
 export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: string }) {
   const now = useMemo(() => Date.parse(nowIso), [nowIso]);
@@ -83,17 +57,19 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [sort, setSort] = useState<SortKey>("priority");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, ScoreOverrides>>({});
+  // Per-issue edits live in this browser only (localStorage), loaded after mount.
+  const [overrides, setOverrides] = useStoredRecord<ScoreOverrides>(SCORES_KEY, sanitizeScoreOverrides);
+  const [ticketEdits, setTicketEdits] = useStoredRecord<TicketEdits>(TICKETS_KEY, sanitizeEdits);
   const [hydrated, setHydrated] = useState(false);
   const [missingIssue, setMissingIssue] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
 
   const isNarrowScreen = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches;
 
-  // Saved edits and the shared view (URL) are read after mount so the server render and the
-  // first client render match. The URL is untrusted input; parseView falls back to defaults.
+  // The shared view (URL) is read after mount so the server render and the first client render
+  // match. The URL is untrusted input; parseView falls back to defaults.
   useEffect(() => {
-    setOverrides(loadOverrides());
+    let revealTimer: number | undefined;
     const view = parseView(window.location.search);
     setQuery(view.query);
     setRepo(view.repo);
@@ -104,7 +80,7 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
         setSelectedId(view.issueId);
         const id = view.issueId;
         // Bring the linked issue into view once the filtered list has rendered.
-        window.setTimeout(() => {
+        revealTimer = window.setTimeout(() => {
           if (isNarrowScreen()) {
             panelRef.current?.scrollIntoView?.({ block: "start" });
             document.getElementById("detail-heading")?.focus({ preventScroll: true });
@@ -117,11 +93,10 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
       }
     }
     setHydrated(true);
+    // Don't run the scroll after the board has been removed from the page.
+    return () => window.clearTimeout(revealTimer);
     // Runs once on mount; `rows` comes from props and is stable for this page.
   }, []);
-  useEffect(() => {
-    if (hydrated) saveOverrides(overrides);
-  }, [overrides, hydrated]);
 
   // Keep the address bar in sync so the current view can be shared. replaceState (not pushState)
   // avoids filling the back button with one entry per keystroke.
@@ -203,6 +178,16 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
       if (Object.keys(current).length === 0) delete next[row.issue.id];
       else next[row.issue.id] = current;
       return next;
+    });
+  }
+
+  function changeTicketEdits(id: string, next: TicketEdits | undefined) {
+    setSelectedId(id);
+    setTicketEdits((prev) => {
+      const copy = { ...prev };
+      if (next) copy[id] = next;
+      else delete copy[id];
+      return copy;
     });
   }
 
@@ -383,6 +368,8 @@ export function TriageBoard({ issues, nowIso }: { issues: Issue[]; nowIso: strin
                 scores={scoresFor(selected)}
                 onScoreChange={(key, value) => changeScore(selected, key, value)}
                 onScoreReset={() => resetScores(selected.issue.id)}
+                ticketEdits={ticketEdits[selected.issue.id]}
+                onTicketEdits={(next) => changeTicketEdits(selected.issue.id, next)}
               />
             </aside>
           )}

@@ -59,7 +59,7 @@ Doing that by hand is slow, and doing it with opaque tooling is risky, because a
 | **Shareable views** | Filters, sort, and the selected issue live in the URL, so `/?cat=reliability&issue=netbird-5513` opens that exact view. "Copy link to this view" builds it for you. Edited scores are deliberately **not** in links (they stay in each person's browser); share a prioritized ticket by copying its Markdown. |
 | **Categorization** | Label-based (solid badge) or wording-based (dashed badge, "inferred"). An issue can have several categories. The reasons are shown in the detail panel. |
 | **Prioritization** | `priority = (impact × urgency) ÷ effort`, each 1 to 5. Defaults are labelled "Suggested (inferred, unverified)" with a "Why is the default N?" explanation. Edit with sliders; edits are marked "Edited by you", saved in your browser only, and resettable. |
-| **Ticket drafting** | Problem statement, user story, acceptance criteria, QA test scenarios, and assumptions, from deterministic templates that update as you edit scores. Copy as Markdown. No AI involved. |
+| **Ticket drafting** | Problem statement, user story, acceptance criteria, QA test scenarios, and assumptions, from deterministic templates. **Edit any section**: sections you leave alone keep following your scores, edited ones are marked "Edited by you" and can be reset one by one or regenerated all at once. Edits are saved in your browser. Copy as Markdown. No AI involved. |
 | **Case study** | A worked analysis of [`netbirdio/netbird#5513`](https://github.com/netbirdio/netbird/issues/5513): evidence ledger, validation-first plan, hypotheses, requirements (R1 to R8), and an interactive concept mock of connection-state UX. |
 | **States** | Loading skeleton, error boundary, "no issues" and "no matches" empty states, sample-data banner, and not-found page. |
 
@@ -152,13 +152,14 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-75 tests in 10 files cover:
+95 tests in 12 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
 - **Scoring:** the formula, band thresholds, "effort is never inferred", explained adjustments, and sanitizing tampered stored values.
 - **Ticket templates:** determinism, required sections, every category, "never presented as verified".
 - **UI flows:** filtering, empty states, editing, persisting and resetting scores, corrupted `localStorage`, selection, ticket sections, the connection-state mock, and hostile-HTML rendering.
+- **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
 - **URL state:** parsing and serializing views, safe fallbacks for unknown or hostile parameters, restoring a view on load, keeping the address bar in sync, the "linked issue is not loaded" notice, and that copied links carry no scores.
 
 The build was also checked with the **axe-core** automated accessibility engine in light and dark themes (0 violations on the board, a selected issue, and the case study). That is an automated scan, not a substitute for manual screen-reader testing.
@@ -202,7 +203,6 @@ The production build succeeds with or without network access, because a failed f
 
 **Near term**
 
-- Editable ticket draft with a "regenerate from template" action.
 - "Load more" pagination.
 - ESLint and a Playwright end-to-end suite added to CI.
 - Content-Security-Policy with nonces.
