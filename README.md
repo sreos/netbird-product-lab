@@ -178,7 +178,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 | Variable | Purpose |
 | --- | --- |
-| `GITHUB_TOKEN` | Server-side only. Raises GitHub's limit from 60 to 5,000 requests per hour. Use a fine-grained token with read-only access to public repositories and no extra permissions. Never prefixed with `NEXT_PUBLIC_`. |
+| `GITHUB_TOKEN` | Server-side only. Raises GitHub's limit from 60 to 5,000 requests per hour. Use a fine-grained token with read-only access to public repositories and no extra permissions. Never prefixed with `NEXT_PUBLIC_`. If GitHub rejects it (for example, it expired), the app falls back to anonymous access instead of failing. See [Adding the token](#adding-the-optional-github-token). |
 | `USE_SAMPLE_DATA` | Set to `1` to skip GitHub and always use the bundled snapshot (offline development, demos, screenshots). |
 
 ### Scripts
@@ -193,7 +193,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 
 ### Tests
 
-220 tests in 24 files cover:
+234 tests in 26 files cover:
 
 - **GitHub client:** pull-request filtering, `GET`-only requests, optional bearer token, rate-limit / network / HTTP-error / invalid-payload fallback, per-repository fallback, sample mode.
 - **Categorization:** label vs wording evidence, case-insensitive labels, the threshold against weak hints, and coverage of all five categories in the sample data.
@@ -203,6 +203,7 @@ All optional. See [`.env.example`](.env.example) and copy it to `.env.local` if 
 - **Ticket editing:** untouched sections keep following the template and scores, edited ones are frozen, reverting by hand clears the "edited" state, typing never loses focus, blank lines survive, add/remove scenarios, per-section reset, confirmed regenerate, persistence, and validation of stored data.
 - **Similarity:** stemming and tokenizing, linking real related reports, the "rare word in both titles" rule, no links from boilerplate or description-only overlap, thresholds, symmetry, theme size cap, determinism. Each rule was verified by temporarily breaking it and confirming that a test fails.
 - **Case studies:** every section renders on both pages (and when the issue cannot be loaded), the evidence ledger labels claims and keeps unknowns visible, the timeline separates verified items from stated ones, the conclusion is marked as a hypothesis, the index links both studies, and the pages link to each other.
+- **Token handling:** a rejected token is retried once without it (and a 401 with no token, or any other failure, is not retried), the rate-limit readout in each situation (no token, working token, rejected token, failures), and that neither the client nor the status endpoint ever exposes the token value.
 - **Contrast and mocks:** the WCAG contrast formula against its published reference values (21:1 for black on white, 4.54:1 for #767676 on white), the contrast explorer (presets, sliders, icon-plus-word verdicts), and the theme-control mock in all three versions, including that the mock's own preview themes meet WCAG AA.
 - **Trends:** month windows (including year boundaries and UTC), per-category counts, issues older than the window reported rather than dropped, repository scoping, medians and shares, clean axis ticks, and the view itself: figures, legend toggling that never hides the last series, the table twin, range and repository filters, keyboard navigation and its screen-reader announcements, tooltip contents and placement, the in-progress month, and empty states.
 - **Discussion:** comment normalization (roles, team flag, bots, no usernames), the team-response summary, and the endpoint (input validation, loaded-issues-only with a check that GitHub is never called otherwise, 429 and 502 mapping, no caching of errors, sample mode, no leakage of internal errors), plus the panel's idle, loading, ready, partial-thread, error, retry, and hostile-text states.
@@ -217,9 +218,20 @@ The [live demo](https://netbird-product-lab.vercel.app) is deployed this way, st
 
 1. Push this folder to a Git repository and import it in Vercel. The Next.js framework preset is detected automatically; no `vercel.json` is needed.
 2. Deploy. **No environment variables are required.**
-3. Optional but recommended: add `GITHUB_TOKEN` (see above) under *Project Settings → Environment Variables*. Unauthenticated requests are limited to 60 per hour **per IP**, and hosted build and server IPs may be shared with other projects, so a token makes live data more reliable. Without one, the app still works and falls back to the sample snapshot with a visible banner.
+3. Optional but recommended: add `GITHUB_TOKEN` (see [Adding the token](#adding-the-optional-github-token) below). Unauthenticated requests are limited to 60 per hour **per IP**, and hosted build and server IPs may be shared with other projects, so a token makes live data more reliable. Without one, the app still works and falls back to the sample snapshot with a visible banner.
 
 The production build succeeds with or without network access, because a failed fetch falls back to sample data instead of failing the build.
+
+### Adding the optional GitHub token
+
+The token only raises GitHub's rate limit; the app never needs it to work, and it is never sent to the browser.
+
+1. On GitHub: *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*.
+2. Choose **Public repositories (read-only)** and grant **no** additional permissions. Choose an expiry you will remember (fine-grained tokens expire; 90 days is a reasonable choice).
+3. Copy the token once (GitHub shows it only at creation). In Vercel: *Project → Settings → Environment Variables*, add `GITHUB_TOKEN` for **Production** (and Preview if you want), paste the value, and mark it **Sensitive**. Then **redeploy**; environment variable changes apply only to new deployments.
+4. Verify it with the public status endpoint, `GET /api/status`. It reports whether a token is set, whether GitHub accepts it, and the live limit: `"limit": 5000` means the token works, `60` means it does not. It never returns the token itself.
+
+If the token later expires or is revoked, GitHub answers `401`; the app then retries without it and carries on at the anonymous limit rather than failing, and `/api/status` shows `"tokenAccepted": false`.
 
 ## Tradeoffs
 
@@ -282,6 +294,7 @@ src/
     case-study/dashboard-412/page.tsx   Case study 2 (a long-running feature request)
     trends/page.tsx           Backlog trends
     api/comments/route.ts     Read-only, validated, cached comments endpoint
+    api/status/route.ts       Token and rate-limit readout (never returns the token)
     loading.tsx, error.tsx, not-found.tsx
   components/
     TriageBoard.tsx           Filters, sorting, selection, persisted score edits

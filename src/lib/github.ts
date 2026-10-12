@@ -27,26 +27,37 @@ export class GitHubError extends Error {
   }
 }
 
-async function githubGet(path: string, fetchImpl: typeof fetch = fetch): Promise<unknown> {
+const configuredToken = (): string | undefined => process.env.GITHUB_TOKEN?.trim() || undefined;
+
+/**
+ * One GET to the GitHub API. Throws only for network failures; HTTP errors come back as a Response.
+ * `fresh` bypasses Next's data cache (used for the live rate-limit readout).
+ */
+async function send(path: string, token: string | undefined, fetchImpl: typeof fetch, fresh = false): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "netbird-product-lab-portfolio-prototype",
   };
-  const token = process.env.GITHUB_TOKEN?.trim();
   if (token) headers.Authorization = `Bearer ${token}`;
-
-  let res: Response;
   try {
-    res = await fetchImpl(`${API_ROOT}${path}`, {
+    return await fetchImpl(`${API_ROOT}${path}`, {
       method: "GET",
       headers,
-      next: { revalidate: REVALIDATE_SECONDS },
+      ...(fresh ? { cache: "no-store" as const } : { next: { revalidate: REVALIDATE_SECONDS } }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
     throw new GitHubError("network", "Could not reach GitHub (network error or timeout)");
   }
+}
+
+async function githubGet(path: string, fetchImpl: typeof fetch = fetch): Promise<unknown> {
+  const token = configuredToken();
+  let res = await send(path, token, fetchImpl);
+  // An expired or revoked token makes GitHub answer 401 to everything. Fall back to anonymous access so
+  // the site degrades to the lower rate limit instead of failing outright.
+  if (res.status === 401 && token) res = await send(path, undefined, fetchImpl);
 
   if (!res.ok) {
     const exhausted = res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after");
@@ -63,6 +74,50 @@ async function githubGet(path: string, fetchImpl: typeof fetch = fetch): Promise
   } catch {
     throw new GitHubError("invalid", "GitHub returned a response that was not valid JSON");
   }
+}
+
+export interface RateLimitStatus {
+  /** A GITHUB_TOKEN is set on the server. (The value itself is never exposed.) */
+  tokenConfigured: boolean;
+  /** Whether GitHub accepted it; null when none is set. */
+  tokenAccepted: boolean | null;
+  /** Requests allowed per hour for the identity actually being used: 60 anonymous, 5,000 with a valid token. */
+  limit: number;
+  remaining: number;
+  /** ISO 8601 */
+  resetsAt: string;
+}
+
+/**
+ * The live GitHub rate limit for this server, and whether the configured token is working.
+ * GitHub does not count this call against the limit it reports.
+ */
+export async function getRateLimitStatus(fetchImpl: typeof fetch = fetch): Promise<RateLimitStatus> {
+  const token = configuredToken();
+  let tokenAccepted: boolean | null = null;
+  let res = await send("/rate_limit", token, fetchImpl, true);
+  if (token) {
+    tokenAccepted = res.status !== 401 && res.ok;
+    if (res.status === 401) res = await send("/rate_limit", undefined, fetchImpl, true);
+  }
+  if (!res.ok) throw new GitHubError("http", `GitHub responded with HTTP ${res.status}`, res.status);
+
+  let core: { limit?: unknown; remaining?: unknown; reset?: unknown } | undefined;
+  try {
+    core = ((await res.json()) as { resources?: { core?: typeof core } }).resources?.core;
+  } catch {
+    throw new GitHubError("invalid", "GitHub returned a response that was not valid JSON");
+  }
+  if (!core || typeof core.limit !== "number" || typeof core.remaining !== "number" || typeof core.reset !== "number") {
+    throw new GitHubError("invalid", "GitHub returned an unexpected response shape");
+  }
+  return {
+    tokenConfigured: Boolean(token),
+    tokenAccepted,
+    limit: core.limit,
+    remaining: core.remaining,
+    resetsAt: new Date(core.reset * 1000).toISOString(),
+  };
 }
 
 export async function fetchRepoIssues(repo: RepoSlug, fetchImpl?: typeof fetch): Promise<Issue[]> {
